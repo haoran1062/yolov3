@@ -29,28 +29,6 @@ class Visual(object):
          print("NOTHING HAS BEEN SAVED: NOTHING IN THIS ENV - DOES IT EXIST ?")
          return
 
-    #   file = open(file_path, 'w+')
-    #   for datapoint in data.values():
-    #      output = {
-    #          'win': datapoint['id'],
-    #          'eid': new_env,
-    #          'opts': {}
-    #      }
-
-    #      if datapoint['type'] != "plot":
-    #          output['data'] = [{'content': datapoint['content'], 'type': datapoint['type']}]
-    #          if datapoint['height'] is not None:
-    #              output['opts']['height'] = datapoint['height']
-    #          if datapoint['width'] is not None:
-    #              output['opts']['width'] = datapoint['width']
-    #      else:
-    #          output['data'] = datapoint['content']["data"]
-    #          output['layout'] = datapoint['content']["layout"]
-
-    #      to_write = json.dumps(["events", output])
-    #      file.write(to_write + '\n')
-    #   file.close()
-
    def plot_many(self, d):
        
        for k, v in d.iteritems():
@@ -74,7 +52,11 @@ class Visual(object):
 
    def img(self, name, img_, **kwargs):
        def cv2PIL(img):
-           return Image.fromarray(cv2.cvtColor(img,cv2.COLOR_BGR2RGB))
+           cv2.imwrite('temp.jpg', img)
+           return Image.open('temp.jpg')
+        #    print('convert')
+        #    return Image.fromarray(cv2.cvtColor(img,cv2.COLOR_BGR2RGB))
+        #    return Image.fromarray(img)
 
        if isinstance(img_, np.ndarray):
            img_ = cv2PIL(img_)

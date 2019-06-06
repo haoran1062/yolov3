@@ -42,18 +42,36 @@ def clip_bbox(bbox, img_size=416):
         bbox[i] = max(bbox[i], 0)
     return bbox
 
-mean = torch.tensor([0.485, 0.456, 0.406], dtype=torch.float32)
-std = torch.tensor([0.229, 0.224, 0.225], dtype=torch.float32)
-un_normal_trans = transforms.Normalize((-mean / std).tolist(), (1.0 / std).tolist())
+# mean = torch.tensor([0.485, 0.456, 0.406], dtype=torch.float32)
+# std = torch.tensor([0.229, 0.224, 0.225], dtype=torch.float32)
+# un_normal_trans = transforms.Normalize((-mean / std).tolist(), (1.0 / std).tolist())
 
-def draw_debug_rect(img, bboxes, clss, confs=None, color=(0, 255, 0), show_time=10000):
+
+def get_names(in_path):
+    ret_list = []
+    with open(in_path, 'r') as f:
+        for line in f:
+            ret_list.append(line.strip())
+    return ret_list
+
+color_list = []
+def make_color_list(n=20):
+    for i in range(n):
+        color_list.append((random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)))
+
+    pass
+
+def draw_debug_rect(img, bboxes, clss, confs, name_list, show_time=10000):
 
     if isinstance(img, torch.Tensor):
         img = img.mul(255).byte()
         img = img.cpu().numpy()
-        # img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        # cv2.imwrite('temp.jpg', img)
+        # img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
     if isinstance(bboxes, torch.Tensor):
         bboxes = bboxes.tolist()
+        clss = clss.tolist()
+        confs = confs.tolist()
 
     if bboxes[0][2] < 1:
         bboxes = bbox_un_norm(bboxes)
@@ -62,10 +80,15 @@ def draw_debug_rect(img, bboxes, clss, confs=None, color=(0, 255, 0), show_time=
     for i, box in enumerate(bboxes):
         box = clip_bbox(box)
         # print(box)
-        color = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
-        cls_i = int(clss[i].item())
+        cls_i = int(clss[i])
+        if len(color_list) == 0:
+            color = (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+        else:
+            color = color_list[cls_i]
         cv2.rectangle(img, (int(box[0]), int(box[1])), (int(box[2]), int(box[3])), color=color,thickness=2)
         # cv2.putText(img, '%s %.2f'%(VOC_CLASSES[cls_i], confs[i]), (int(box[0]), int(box[1]) + 10), cv2.FONT_HERSHEY_SIMPLEX, 0.4, Color[cls_i], 1, 10)
+        cv2.putText(img, '%s %.2f'%(name_list[cls_i], confs[i]), (int(box[0]), int(box[1]) + 10), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1, 10)
+    
     # cv2.imshow('debug draw bboxes', img)
     # cv2.waitKey(show_time)
     return img

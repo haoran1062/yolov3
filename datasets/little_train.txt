@@ -29,3 +29,5 @@
 /data/datasets/VOCdevkit/VOC2007/JPEGImages/000029.jpg
 /data/datasets/VOCdevkit/VOC2007/JPEGImages/000030.jpg
 /data/datasets/VOCdevkit/VOC2007/JPEGImages/000031.jpg
+/data/datasets/VOCdevkit/VOC2007/JPEGImages/000032.jpg
+/data/datasets/VOCdevkit/VOC2007/JPEGImages/000033.jpg

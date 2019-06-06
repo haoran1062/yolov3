@@ -42,7 +42,11 @@ class FPN(nn.Module):
 
     def build_fpn_layer(self, in_channels, out_channels, kernel_sizes):
         fpn_layer = nn.Sequential()
+        # print(in_channels)
+        # print(out_channels)
+        # print(kernel_sizes)
         for it in range(len(in_channels)):
+            # print(in_channels[it], out_channels[it], kernel_sizes[it])
             fpn_layer.add_module('Conv_%d'%(it), ConvModule(in_channels[it], out_channels[it], kernel_size=kernel_sizes[it], padding=(kernel_sizes[it]-1) // 2, bias=False))
 
 

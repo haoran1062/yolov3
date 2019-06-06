@@ -1,3 +1,4 @@
 *.pth
 *.pyc
 saved_models
+temp.jpg

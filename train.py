@@ -57,11 +57,11 @@ epochs = train_config['epoch_num']
 
 
 
-# optimizer = optim.SGD(yolo_p.parameters(), lr=lr0, momentum=momentum, weight_decay=weight_decay) # , weight_decay=5e-4)
-optimizer = optim.Adam(yolo_p.parameters())
+optimizer = optim.SGD(yolo_p.parameters(), lr=lr0, momentum=momentum, weight_decay=weight_decay) # , weight_decay=5e-4)
+# optimizer = optim.Adam(yolo_p.parameters())
 
 lf = lambda x: 1 - 10 ** (lrf * (1 - x / epochs))  # inverse exp ramp
-# scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lf, last_epoch= resume_epoch - 1)
+scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lf, last_epoch= resume_epoch - 1)
 
 
 
@@ -97,11 +97,12 @@ last_little_mAP = 0.0
 # my_vis.img('label colors', get_class_color_img())
 n_burnin = min(round(len(train_dataset) / 5 + 1), 1000) 
 
-
+name_list = get_names(config_map.name_path)
+make_color_list(config_map.class_num)
 
 for epoch in range(train_config['resume_epoch'], train_config['epoch_num']):
     
-    # scheduler.step()
+    scheduler.step()
 
     yolo_p.train()
 
@@ -115,10 +116,10 @@ for epoch in range(train_config['resume_epoch'], train_config['epoch_num']):
     
     for i,(img, label_bboxes) in enumerate(train_loader):
         # print('mask label : ', mask_label.shape, mask_label.dtype)
-        # if epoch == 0 and i <= n_burnin:
-        #     lr = lr0 * (i / n_burnin) ** 4
-        #     for x in optimizer.param_groups:
-        #         x['lr'] = lr
+        if epoch == 0 and i <= n_burnin:
+            lr = lr0 * (i / n_burnin) ** 4
+            for x in optimizer.param_groups:
+                x['lr'] = lr
 
         it_st_time = time.clock()
         train_iter += 1
@@ -139,12 +140,12 @@ for epoch in range(train_config['resume_epoch'], train_config['epoch_num']):
             yolo_p.eval()
             # img, label_bboxes = next(test_iter)
             pred, _ = yolo_p(img[0].unsqueeze(0))
-            detect_tensor = non_max_suppression(pred.to('cpu'), conf_thres=0.65, nms_thres=0.1)
+            detect_tensor = non_max_suppression(pred.to('cpu'), conf_thres=0.55, nms_thres=0.1)
             detect_tensor = detect_tensor[0]
             show_img = unorm(img[0])
             if detect_tensor is not None:
                 # print(show_img.shape)
-                show_img = draw_debug_rect(show_img.permute(1, 2 ,0), detect_tensor[..., 1:5], detect_tensor[..., -1])
+                show_img = draw_debug_rect(show_img.permute(1, 2 ,0), detect_tensor[..., 1:5], detect_tensor[..., -1], detect_tensor[..., -2], name_list)
             my_vis.img('detect bboxes show', show_img)
 
             yolo_p.train()
