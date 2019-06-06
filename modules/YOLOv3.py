@@ -191,45 +191,80 @@ class YOLO(nn.Module):
 
     def __init__(self, cfg, logger=None, vis=None, device='cuda:0'):
         super(YOLO, self).__init__()
-        self.backbone = self.load_backbone(cfg.backbone_type[0], cfg.backbone_config[0]).to(device)
-        self.fpn = self.load_fpn(cfg.fpn_config).to(device)
+        self.cfg=cfg
+        # self.backbone = self.load_backbone(cfg.backbone_type[0], cfg.backbone_config[0]).to(device)
+        # self.fpn = self.load_fpn(cfg.fpn_config).to(device)
         self.device = device
+        self.logger=logger
+        self.vis=vis
         self.lbd_cfg = cfg.train_config['lbd_map']
-        self.relu = nn.ReLU(inplace=True)
-        self.yolo_layer_list = nn.ModuleList(self.init_yolo_layers(cfg.yolo_layer_config_list, logger=logger, vis=vis))
+        # self.yolo_layer_list = nn.ModuleList(self.init_yolo_layers(cfg.yolo_layer_config_list, logger=logger, vis=vis))
+        self.model_list = nn.ModuleList()
+        self.model_names = []
+
+        self.build_models()
+
     
     def init_yolo_layers(self, yolo_layer_config_list, logger=None, vis=None):
         yolo_layer_list = []
         for now_map in yolo_layer_config_list:
-            yolo_layer_list.append(YOLOLayer(now_map, self.lbd_cfg, logger=logger, vis=vis).to(self.device))
-        return yolo_layer_list
+            self.model_list.append(YOLOLayer(now_map, self.lbd_cfg, logger=logger, vis=vis))
+            # yolo_layer_list.append(YOLOLayer(now_map, self.lbd_cfg, logger=logger, vis=vis).to(self.device))
+        # return yolo_layer_list
     
+    def build_models(self):
+        
+        # self.model_list.append(self.load_backbone(self.cfg.backbone_type[0], self.cfg.backbone_config[0]))
+        # self.model_list.append(self.load_fpn(self.cfg.fpn_config))
+        # self.model_list.append([nn.Sequential(i) for i in self.init_yolo_layers(self.cfg.yolo_layer_config_list, logger=self.logger, vis=self.vis)])
+        self.load_backbone(self.cfg.backbone_type[0], self.cfg.backbone_config[0])
+        self.model_names.append('backbone')
+        self.load_fpn(self.cfg.fpn_config)
+        self.model_names.append('fpn')
+        self.init_yolo_layers(self.cfg.yolo_layer_config_list, logger=self.logger, vis=self.vis)
+        for i in range(len(self.cfg.yolo_layer_config_list)):
+            self.model_names.append('yolo_layer_%d'%(i))
+
     def load_backbone(self, backbone_type, cfg):
         if backbone_type == 'resnet18':
             backbone = resnet18(True, **cfg)
 
         else:
             print(backbone_type, ' not support!!!')
-
-        return backbone
+        self.model_list.append(backbone)
+        # return backbone
     
     def load_fpn(self, cfg):
         fpn = FPN(cfg)
+        self.model_list.append(fpn)
 
-        return fpn
+        # return fpn
 
 
     def forward(self, x, target_tensor=None, cuda=True):
         FloatTensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
-
-        feature_map_list = self.backbone(x)
-        pyramid_output_list = self.fpn(feature_map_list)
+        
         pred_list = []
         total_loss = FloatTensor([0])
-        for i in range(len(pyramid_output_list)):
-            now_scale_pred, layer_loss = self.yolo_layer_list[i](pyramid_output_list[i], target_tensor)
-            pred_list.append(now_scale_pred)
-            total_loss += layer_loss
+        
+        for it, (nn_name, nn_layer) in enumerate(zip(self.model_names, self.model_list)):
+            if nn_name == 'backbone':
+                feature_map_list = nn_layer(x)
+            elif nn_name == 'fpn':
+                pyramid_output_list = nn_layer(feature_map_list)
+            elif nn_name[:len('yolo')] == 'yolo':
+                layer_id = int(nn_name.split('_')[-1])
+                now_scale_pred, layer_loss = nn_layer(pyramid_output_list[layer_id], target_tensor)
+                pred_list.append(now_scale_pred)
+                total_loss += layer_loss
+
+        # feature_map_list = self.backbone(x)
+        # pyramid_output_list = self.fpn(feature_map_list)
+        
+        # for i in range(len(pyramid_output_list)):
+        #     now_scale_pred, layer_loss = self.yolo_layer_list[i](pyramid_output_list[i], target_tensor)
+        #     pred_list.append(now_scale_pred)
+        #     total_loss += layer_loss
         if self.training and target_tensor is not None:
             return pred_list, total_loss
         else:

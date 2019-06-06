@@ -81,7 +81,7 @@ class Config(object):
             show_img_iter_during_train=2,
             resume_from_path=None,
             resume_epoch=0,
-            train_txt_path="datasets/little_train.txt",
+            train_txt_path="datasets/2007_train.txt",
             test_txt_path="datasets/2007_train.txt",
             log_name="trainLog",
             base_save_path="/home/ubuntu/project/YOLO_V3/save_weights/resnet18_results",
