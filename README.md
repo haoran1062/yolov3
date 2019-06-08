@@ -7,7 +7,7 @@
 
 ### bugs
 * 1. can't train on big datasets, because of bad performance on big datasets.
-* 2. on little datasets like 1~8 picture could have expected result(but not every time can success), and every time trained results is different, need to find reasons.
+* 2. on little datasets like 1~8 picture could have expected result on the train datasets(but not every time can success), and every time trained results is different, need to find reasons.
 * 3. multi-GPU will hang! I have not find the reason but I guess maybe some modules not registered success, but single GPU could run.
 
 ##### run train
@@ -38,7 +38,7 @@
 
 ##### Requirements
 * python3
-* pytorch 0.4.0
+* pytorch 1.0+
 * visdom
 * torchsummary
 * torchvision
