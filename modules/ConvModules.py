@@ -56,7 +56,7 @@ class ConvModule(nn.Module):
         self.activate = nn.ReLU(inplace=inplace)
 
         # Default using msra init
-        self.init_weights()
+        # self.init_weights()
 
 
     def init_weights(self):

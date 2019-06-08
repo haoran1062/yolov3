@@ -178,13 +178,13 @@ def create_logger(base_path, log_name):
 
     return logger
 
-def warmming_up_policy(now_iter, now_lr, stop_down_iter=1000):
+def warmming_up_policy(now_iter, now_lr, stop_down_iter=1000, add_lr=0.000001):
     if now_iter <= stop_down_iter:
-        now_lr += 0.000001
+        now_lr += add_lr
     return now_lr
 
-def learning_rate_policy(now_iter, now_epoch, now_lr, lr_adjust_map, stop_down_iter=1000):
-    now_lr = warmming_up_policy(now_iter, now_lr, stop_down_iter)
+def learning_rate_policy(now_iter, now_epoch, now_lr, lr_adjust_map, stop_down_iter=1000, add_lr=0.000001):
+    now_lr = warmming_up_policy(now_iter, now_lr, stop_down_iter, add_lr)
     if now_iter >= stop_down_iter and now_epoch in lr_adjust_map.keys():
         now_lr = lr_adjust_map[now_epoch]
 

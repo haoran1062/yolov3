@@ -1,6 +1,6 @@
 # encoding:utf-8
 import os, sys, time
-sys.path.insert(0, '/home/ubuntu/project/simply_yolo_v3/modules')
+sys.path.insert(0, '/data/projects/my_yolov3/modules')
 from backbones.OriginResNet import resnet18, resnet34, resnet50
 # print(sys.path)
 import torch, torch.nn as nn
@@ -80,6 +80,8 @@ class YOLOLayer(nn.Module):
         gt_wh = target_bboxes[:, 2:]
         # gt contain obj index
         gt_index_i, gt_index_j = gt_xy.long().t()
+        # print(gt_index_i[gt_index_i > self.grid_num], gt_index_i[gt_index_i < 0], gt_index_j[gt_index_j > self.grid_num], gt_index_j[gt_index_j < 0])
+        
 
         gt_anchor_ious = torch.stack([anchor_iou(self.anchor_wh[it], gt_wh) for it in range(len(self.anchor_wh))])
         best_ious, best_index = gt_anchor_ious.max(0)
@@ -87,8 +89,8 @@ class YOLOLayer(nn.Module):
         obj_mask[img_id, best_index, gt_index_i, gt_index_j] = 1
         noobj_mask[img_id, best_index, gt_index_i, gt_index_j] = 0
 
-        for it, now_ious in enumerate(gt_anchor_ious.t()):
-            noobj_mask[img_id[it], now_ious > self.iou_thresh, gt_index_i[it], gt_index_j[it]] = 0
+        # for it, now_ious in enumerate(gt_anchor_ious.t()):
+        #     noobj_mask[img_id[it], now_ious > self.iou_thresh, gt_index_i[it], gt_index_j[it]] = 0
         
         # obj_mask = 1 - noobj_mask
         tx[img_id, best_index, gt_index_i, gt_index_j] = gt_xy[:, 0] - gt_xy[:, 0].floor()

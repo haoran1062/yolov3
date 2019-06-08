@@ -56,12 +56,12 @@ resume_epoch = train_config['resume_epoch']
 epochs = train_config['epoch_num']
 
 
-
-optimizer = optim.SGD(yolo_p.parameters(), lr=lr0, momentum=momentum, weight_decay=weight_decay) # , weight_decay=5e-4)
+learning_rate = 0.
+optimizer = optim.SGD(yolo_p.parameters(), lr=learning_rate, momentum=momentum, weight_decay=weight_decay) # , weight_decay=5e-4)
 # optimizer = optim.Adam(yolo_p.parameters())
 
-lf = lambda x: 1 - 10 ** (lrf * (1 - x / epochs))  # inverse exp ramp
-scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lf, last_epoch= resume_epoch - 1)
+# lf = lambda x: 1 - 10 ** (lrf * (1 - x / epochs))  # inverse exp ramp
+# scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lf, last_epoch= resume_epoch - 1)
 
 
 
@@ -77,7 +77,7 @@ transform = transforms.Compose([
     ])
 
 
-train_dataset = yoloDataset(list_file=train_config['train_txt_path'], train=False, transform = transform, test_mode=False, device='cuda:0')
+train_dataset = yoloDataset(list_file=train_config['train_txt_path'], train=False, transform = transform, little_train=8, test_mode=False, device='cuda:0')
 train_loader = DataLoader(train_dataset, batch_size=train_config['batch_size'], shuffle=True, num_workers=train_config['worker_num'], collate_fn=train_dataset.collate_fn)
 
 test_dataset = yoloDataset(list_file=train_config['test_txt_path'], train=False, transform = transform, test_mode=False, device='cuda:0')
@@ -96,13 +96,15 @@ last_little_mAP = 0.0
 
 # my_vis.img('label colors', get_class_color_img())
 n_burnin = min(round(len(train_dataset) / 5 + 1), 1000) 
+n_burnin = 100
 
 name_list = get_names(config_map.name_path)
 make_color_list(config_map.class_num)
 
+
 for epoch in range(train_config['resume_epoch'], train_config['epoch_num']):
     
-    scheduler.step()
+    # scheduler.step()
 
     yolo_p.train()
 
@@ -116,16 +118,16 @@ for epoch in range(train_config['resume_epoch'], train_config['epoch_num']):
     
     for i,(img, label_bboxes) in enumerate(train_loader):
         # print('mask label : ', mask_label.shape, mask_label.dtype)
-        if epoch == 0 and i <= n_burnin:
-            lr = lr0 * (i / n_burnin) ** 4
-            for x in optimizer.param_groups:
-                x['lr'] = lr
+        # if epoch == 0 and i <= n_burnin:
+        #     lr = lr0 * (i / n_burnin) ** 4
+        #     for x in optimizer.param_groups:
+        #         x['lr'] = lr
 
         it_st_time = time.clock()
         train_iter += 1
-        # learning_rate = learning_rate_policy(train_iter, epoch, learning_rate, train_config['lr_adjust_map'])
-        # for param_group in optimizer.param_groups:
-        #     param_group['lr'] = learning_rate
+        learning_rate = learning_rate_policy(train_iter, epoch, learning_rate, train_config['lr_adjust_map'], train_config['stop_down_iter'], train_config['add_lr'])
+        for param_group in optimizer.param_groups:
+            param_group['lr'] = learning_rate
 
         my_vis.plot('now learning rate', optimizer.param_groups[0]['lr'])
         img, label_bboxes = img.to(device), label_bboxes.to(device)
@@ -140,7 +142,7 @@ for epoch in range(train_config['resume_epoch'], train_config['epoch_num']):
             yolo_p.eval()
             # img, label_bboxes = next(test_iter)
             pred, _ = yolo_p(img[0].unsqueeze(0))
-            detect_tensor = non_max_suppression(pred.to('cpu'), conf_thres=0.55, nms_thres=0.1)
+            detect_tensor = non_max_suppression(pred.to('cpu'), conf_thres=0.5, nms_thres=0.1)
             detect_tensor = detect_tensor[0]
             show_img = unorm(img[0])
             if detect_tensor is not None:
@@ -149,14 +151,6 @@ for epoch in range(train_config['resume_epoch'], train_config['epoch_num']):
             my_vis.img('detect bboxes show', show_img)
 
             yolo_p.train()
-
-        #     img = un_normal_trans(images[0])
-        #     bboxes, clss, confs = decoder(pred[0], grid_num=config_map['S'], device=device, thresh=0.15, nms_th=.45)
-        #     bboxes = bboxes.clamp(min=0., max=1.)
-        #     bboxes = bbox_un_norm(bboxes)
-        #     img = draw_debug_rect(img.permute(1, 2 ,0), bboxes, clss, confs)
-        #     my_vis.img('detect bboxes show', img)
-
             
 
         optimizer.zero_grad()
@@ -192,4 +186,4 @@ for epoch in range(train_config['resume_epoch'], train_config['epoch_num']):
     #     logger.info('get best test mAP %.5f' % best_mAP)
     #     torch.save(yolo_p.state_dict(),'%s/%s_S%d_best.pth'%(config_map['base_save_path'], config_map['backbone'], config_map['S']))
    
-    torch.save(yolo_p.state_dict(),'%s/%s_last.pth'%(train_config['base_save_path'], config_map.backbone_type))
+    torch.save(yolo_p.state_dict(),'%s/%s_last.pth'%(train_config['base_save_path'], config_map.backbone_type[0]))

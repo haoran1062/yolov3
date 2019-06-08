@@ -85,7 +85,7 @@ class yoloDataset(Dataset):
             lines  = f.readlines()
         
         if little_train:
-            lines = lines[:64*8]
+            lines = lines[:little_train]
 
         for line in lines:
             splited = line.strip().split()
