@@ -9,17 +9,13 @@ import torch.nn.functional as F
 def anchor_iou(box1, box2):
     # Returns the IoU of wh1 to wh2. wh1 is 2, wh2 is nx2
     box2 = box2.t()
-
     # w, h = box1
     w1, h1 = box1[0], box1[1]
     w2, h2 = box2[0], box2[1]
-
     # Intersection area
     inter_area = torch.min(w1, w2) * torch.min(h1, h2)
-
     # Union Area
     union_area = (w1 * h1 + 1e-16) + w2 * h2 - inter_area
-
     return inter_area / union_area  # iou
 
 def cv_resize(img, resize=416):
@@ -40,6 +36,12 @@ def clip_bbox(bbox, img_size=416):
     for i in range(len(bbox)):
         bbox[i] = min(bbox[i], 416)
         bbox[i] = max(bbox[i], 0)
+    return bbox
+
+def drop_bbox(bbox, img_size=416):
+    for i in range(len(bbox)):
+        if bbox[i] < 0 or bbox[i] > img_size:
+            return None
     return bbox
 
 # mean = torch.tensor([0.485, 0.456, 0.406], dtype=torch.float32)
@@ -78,7 +80,11 @@ def draw_debug_rect(img, bboxes, clss, confs, name_list, show_time=10000):
         print('un_norm bbox')
     # print(len(bboxes))
     for i, box in enumerate(bboxes):
-        box = clip_bbox(box)
+        # box = clip_bbox(box)
+
+        box = drop_bbox(box)
+        if box is None:
+            continue
         # print(box)
         cls_i = int(clss[i])
         if len(color_list) == 0:
@@ -147,7 +153,10 @@ def non_max_suppression(prediction, conf_thres=0.5, nms_thres=0.4):
     output = [None for _ in range(len(prediction))]
     for image_i, image_pred in enumerate(prediction):
         # Filter out confidence scores below threshold
-        conf_mask = (image_pred[:, 0] >= conf_thres).squeeze()
+        class_conf, class_pred = torch.max(image_pred[:, 5:], 1,  keepdim=True)
+        # print(class_conf[:, 0].shape, image_pred[:, 0].shape)
+        conf_mask = (image_pred[:, 0] * class_conf[:, 0] >= conf_thres).squeeze()
+        # conf_mask = (image_pred[:, 0] >= conf_thres).squeeze()
         image_pred = image_pred[conf_mask]
         # If none are remaining => process next image
         if not image_pred.size(0):

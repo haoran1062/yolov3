@@ -12,10 +12,10 @@ class Config(object):
         self.fpn_config = dict(
             classes_num=self.class_num, 
             anchor_num=3,
-            single_fpn_in_channels=[512, 1024, 512, 1024, 512], 
-            single_fpn_out_channels=[512, 1024, 512, 1024, 512],
-            kernel_sizes=[3, 1, 3, 1, 3, 1],
-            middle_channel=256,
+            single_fpn_in_channels=[512, 1024, 512, 1024], 
+            single_fpn_out_channels=[512, 1024, 512, 1024],
+            kernel_sizes=[1, 3, 1, 3, 1],
+            middle_channel=512,
             in_channels=[128, 256, 512], 
             upsample_scale=2, 
             upsample_mode='nearest'
@@ -26,7 +26,7 @@ class Config(object):
                 stride=32,
                 class_num=20,
                 obj_lbd=1,
-                noobj_lbd=1.5,
+                noobj_lbd=1,
                 anchor_list=[[116,90],  [156,198],  [373,326]],
                 iou_thresh=0.1287,
                 device='cuda:0'
@@ -36,7 +36,7 @@ class Config(object):
                 stride=16,
                 class_num=20,
                 obj_lbd=1,
-                noobj_lbd=1.5,
+                noobj_lbd=1,
                 anchor_list=[[30,61],  [62,45],  [59,119]],
                 iou_thresh=0.1287,
                 device='cuda:0'
@@ -46,7 +46,7 @@ class Config(object):
                 stride=8,
                 class_num=20,
                 obj_lbd=1,
-                noobj_lbd=1.5,
+                noobj_lbd=1,
                 anchor_list=[[10,13],  [16,30],  [33,23]],
                 iou_thresh=0.1287,
                 device='cuda:0'
@@ -55,10 +55,12 @@ class Config(object):
         ]
 
         self.train_config = dict(
+            add_lr=0.00001,
+            stop_down_iter=100,
             lr_adjust_map= {
                 1: 0.001,
-                85: 0.0001,
-                135: 0.00001
+                185: 0.0001,
+                335: 0.00001
             },
 
             lbd_map = {
@@ -75,8 +77,8 @@ class Config(object):
 
 
             gpu_ids= [0],
-            worker_num=4,
-            batch_size=24,
+            worker_num=1,
+            batch_size=32,
             epoch_num=15000,
             show_img_iter_during_train=2,
             resume_from_path=None,
@@ -84,8 +86,8 @@ class Config(object):
             train_txt_path="datasets/2007_train.txt",
             test_txt_path="datasets/2007_train.txt",
             log_name="trainLog",
-            base_save_path="/home/ubuntu/project/YOLO_V3/save_weights/resnet18_results",
-            vis_log_path="/home/ubuntu/project/YOLO_V3/save_weights/resnet18_results/vis_log.log",
+            base_save_path="/data/temp/resnet18_results",
+            vis_log_path="/data/temp/resnet18_results/vis_log.log",
 
         )
 
@@ -94,7 +96,7 @@ class Config(object):
             worker_num=0,
             batch_size=1,
             test_txt_path="datasets/little_train.txt",
-            load_from_path="save_weights/resnet18_results/resnet18_last.pth"
+            load_from_path="/data/temp/resnet18_results/resnet18_last.pth"
         )
 
         self.name_path = 'datasets/voc.names'
