@@ -80,7 +80,7 @@ class YOLOLayer(nn.Module):
         gt_wh = target_bboxes[:, 2:]
         # gt contain obj index
         gt_index_i, gt_index_j = gt_xy.long().t()
-        # print(gt_index_i[gt_index_i > self.grid_num], gt_index_i[gt_index_i < 0], gt_index_j[gt_index_j > self.grid_num], gt_index_j[gt_index_j < 0])
+        # print(gt_index_i[gt_index_i == self.grid_num], gt_index_i[gt_index_i < 0], gt_index_j[gt_index_j == self.grid_num], gt_index_j[gt_index_j < 0])
         
 
         gt_anchor_ious = torch.stack([anchor_iou(self.anchor_wh[it], gt_wh) for it in range(len(self.anchor_wh))])
@@ -95,14 +95,15 @@ class YOLOLayer(nn.Module):
         # obj_mask = 1 - noobj_mask
         tx[img_id, best_index, gt_index_i, gt_index_j] = gt_xy[:, 0] - gt_xy[:, 0].floor()
         ty[img_id, best_index, gt_index_i, gt_index_j] = gt_xy[:, 1] - gt_xy[:, 1].floor()
-        tw[img_id, best_index, gt_index_i, gt_index_j] = torch.log(gt_wh[:, 0] / self.anchor_wh[best_index][:, 0] + 1e-16)
-        th[img_id, best_index, gt_index_i, gt_index_j] = torch.log(gt_wh[:, 1] / self.anchor_wh[best_index][:, 1] + 1e-16)
+        tw[img_id, best_index, gt_index_i, gt_index_j] = torch.log(gt_wh[:, 0] / self.anchor_wh[best_index][:, 0])# + 1e-16)
+        th[img_id, best_index, gt_index_i, gt_index_j] = torch.log(gt_wh[:, 1] / self.anchor_wh[best_index][:, 1])# + 1e-16)
         tcls[img_id, best_index, gt_index_i, gt_index_j, label] = 1
         
 
         tconf = obj_mask.float()
+        cls_index = (img_id, best_index, gt_index_i, gt_index_j)
 
-        return obj_mask, noobj_mask, tx, ty, tw, th, tcls, tconf
+        return obj_mask, noobj_mask, tx, ty, tw, th, tcls, tconf, label, cls_index
 
     def decoder(self, eval_tensor):
         # batch_size = eval_tensor.shape[0]
@@ -118,7 +119,7 @@ class YOLOLayer(nn.Module):
 
         return output_tensor.view(self.batch_size, -1, last_dim_size)
 
-    def compute_loss(self, pred_tensor, obj_mask, noobj_mask, tx, ty, tw, th, tcls, tconf, cuda=True):
+    def compute_loss(self, pred_tensor, obj_mask, noobj_mask, tx, ty, tw, th, tcls, tconf, cls_label, cls_index, cuda=True):
         ByteTensor = torch.cuda.ByteTensor if cuda else torch.ByteTensor
         FloatTensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
 
@@ -144,7 +145,11 @@ class YOLOLayer(nn.Module):
         h_loss = wh_lbd * self.mse_loss(ph[obj_mask], th[obj_mask])
 
         # cls_loss = cls_lbd * self.bce_loss(pcls[obj_mask], tcls[obj_mask])
-        cls_loss = cls_lbd * self.bce_log_loss(pcls[obj_mask], tcls[obj_mask])
+        # cls_loss = cls_lbd * self.bce_log_loss(pcls[obj_mask], tcls[obj_mask])
+
+
+        # print(pcls[obj_mask].shape, cls_label.shape)
+        cls_loss = cls_lbd * self.ce_loss(pcls[cls_index], cls_label)
         # _, top_cls = tcls[obj_mask].max(-1)
         # print(top_cls)
         # print(obj_mask)
@@ -181,8 +186,8 @@ class YOLOLayer(nn.Module):
         
 
         if self.training and target_tensor is not None:
-            obj_mask, noobj_mask, tx, ty, tw, th, tcls, tconf = self.encoder(target_tensor)
-            loss = self.compute_loss(x, obj_mask, noobj_mask, tx, ty, tw, th, tcls, tconf)
+            obj_mask, noobj_mask, tx, ty, tw, th, tcls, tconf, cls_label, cls_index = self.encoder(target_tensor)
+            loss = self.compute_loss(x, obj_mask, noobj_mask, tx, ty, tw, th, tcls, tconf, cls_label, cls_index)
             return x, loss
         else:
             return self.decoder(x), 0

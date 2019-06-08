@@ -77,13 +77,13 @@ class Config(object):
 
 
             gpu_ids= [0],
-            worker_num=1,
-            batch_size=32,
+            worker_num=0,
+            batch_size=2,
             epoch_num=15000,
             show_img_iter_during_train=2,
             resume_from_path=None,
             resume_epoch=0,
-            train_txt_path="datasets/2007_train.txt",
+            train_txt_path="datasets/little_train.txt",
             test_txt_path="datasets/2007_train.txt",
             log_name="trainLog",
             base_save_path="/data/temp/resnet18_results",
@@ -93,8 +93,8 @@ class Config(object):
 
         self.eval_config = dict(
             gpu_ids= [0],
-            worker_num=0,
-            batch_size=1,
+            worker_num=1,
+            batch_size=32,
             test_txt_path="datasets/little_train.txt",
             load_from_path="/data/temp/resnet18_results/resnet18_last.pth"
         )

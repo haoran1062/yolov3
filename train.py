@@ -77,7 +77,7 @@ transform = transforms.Compose([
     ])
 
 
-train_dataset = yoloDataset(list_file=train_config['train_txt_path'], train=False, transform = transform, little_train=8, test_mode=False, device='cuda:0')
+train_dataset = yoloDataset(list_file=train_config['train_txt_path'], train=False, transform = transform, little_train=False, test_mode=False, device='cuda:0')
 train_loader = DataLoader(train_dataset, batch_size=train_config['batch_size'], shuffle=True, num_workers=train_config['worker_num'], collate_fn=train_dataset.collate_fn)
 
 test_dataset = yoloDataset(list_file=train_config['test_txt_path'], train=False, transform = transform, test_mode=False, device='cuda:0')
