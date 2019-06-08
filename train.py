@@ -18,7 +18,7 @@ from collections import defaultdict
 from tqdm import tqdm
 from copy import deepcopy
 from utils.visual import Visual
-from modules.configs.resnet50_yolo_style_fpn_yolov3 import Config
+from modules.configs.resnet18_yolo_style_fpn_yolov3 import Config
 from utils.train_utils import *
 from modules.compute_utils import *
 import torch.optim as optim

@@ -11,7 +11,7 @@ from PIL import Image
 from modules.backbones.OriginResNet import resnet18, resnet50
 from modules.FPN import FPN
 from modules.YOLOv3 import YOLO
-from configs.resnet50_yolo_style_fpn_yolov3 import Config
+from configs.resnet18_yolo_style_fpn_yolov3 import Config
 
 def select_device(force_cpu=False):
     cuda = False if force_cpu else torch.cuda.is_available()

@@ -8,7 +8,7 @@ import torch.nn.functional as F
 from FPN import FPN
 # from modules.resnet50_yolo_style_fpn_yolov3 import Config
 from compute_utils import *
-from configs.resnet50_yolo_style_fpn_yolov3 import Config
+from configs.resnet18_yolo_style_fpn_yolov3 import Config
 
 class YOLOLayer(nn.Module):
     def __init__(self, cfg, lbd_cfg, logger=None, vis=None, img_size=416):
