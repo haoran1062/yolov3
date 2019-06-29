@@ -1,6 +1,6 @@
 # encoding:utf-8
 import torch.nn as nn
-import math
+import math, torch
 import torch.utils.model_zoo as model_zoo
 
 
@@ -101,7 +101,7 @@ class ResNet(nn.Module):
         super(ResNet, self).__init__()
         self.layer_st = layer_st
         self.layer_ed = layer_ed
-        print(self.layer_st, self.layer_ed)
+        # print(self.layer_st, self.layer_ed)
         self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3,
                                bias=False)
         self.bn1 = nn.BatchNorm2d(64)
@@ -139,6 +139,7 @@ class ResNet(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, x):
+        print(x.shape, x.device, torch.backends.cudnn.benchmark)
         c1 = x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)

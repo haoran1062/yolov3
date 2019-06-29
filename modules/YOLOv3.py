@@ -92,6 +92,10 @@ class YOLOLayer(nn.Module):
     def compute_loss(self, pred_tensor, target, cuda=True):
         ByteTensor = torch.cuda.ByteTensor if cuda else torch.ByteTensor
         FloatTensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
+        
+        # now_device = pred_tensor.device
+        # now_device = target.device
+        # target = target.to(now_device)
 
         k = self.lbd_cfg['k'] * self.batch_size
         xy_lbd = k * self.lbd_cfg['xy']
@@ -104,16 +108,25 @@ class YOLOLayer(nn.Module):
         img_id, best_index, gx_index, gy_index = obj_indexs
 
         now_device = txy.device
-        pred_tensor = pred_tensor.to(now_device)
+        # pred_tensor = pred_tensor.to(now_device)
         pconf = torch.sigmoid(pred_tensor[..., 0])
         tconf = torch.zeros_like(pconf)
         
         if len(img_id):
-            obj_pred = pred_tensor[obj_indexs].to(now_device)
+            obj_pred = pred_tensor[obj_indexs]# .to(now_device)
+            print(obj_pred.shape, obj_pred.device)
+            print(obj_pred.to('cuda:0'))
             tconf[obj_indexs] = 1. 
             pxy = obj_pred[..., 1:3].sigmoid().to(now_device)
 
             pwh = obj_pred[..., 3:5].to(now_device)
+            print('*'*30)
+            print('now device: ', now_device)
+            print(pxy.device, txy.device)
+            print(txy)
+            print(pxy)
+            print(pxy.shape, txy.shape)
+            print('*'*30)
             xy_loss += xy_lbd * mse_loss(pxy, txy)
             wh_loss += wh_lbd * mse_loss(pwh, twh)
             cls_loss += cls_lbd * ce_loss(obj_pred[..., 5:], tcls)
@@ -199,7 +212,7 @@ class YOLO(nn.Module):
 
     def forward(self, x, target_tensor=None, cuda=True):
         FloatTensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
-        
+        print('start forward!')        
         pred_list = []
         total_loss = FloatTensor([0])
         

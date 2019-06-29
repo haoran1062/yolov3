@@ -22,7 +22,14 @@ from modules.configs.resnet18_yolo_style_fpn_yolov3 import Config
 from utils.train_utils import *
 from modules.compute_utils import *
 import torch.optim as optim
-torch.backends.cudnn.benchmark=False
+import torch.distributed as dist
+# torch.backends.cudnn.benchmark=False
+os.environ['MASTER_ADDR'] = '127.0.0.1'
+os.environ['MASTER_PORT'] = '9999'
+# torch.distributed.init_process_group(backend='nccl', init_method='tcp://127.0.0.1:9999', world_size=2, rank=0)
+# torch.distributed.deprecated.init_process_group(backend='nccl', rank=0, world_size=1, init_method='tcp://127.0.0.1:9999')
+# torch.distributed.deprecated.init_process_group(backend='nccl')
+# dist.init_process_group(backend='nccl', init_method='tcp://127.0.0.1:9999', world_size=1, rank=0)
 
 parser = argparse.ArgumentParser(
     description='YOLO V1 Training params')
@@ -42,7 +49,8 @@ my_vis = Visual(train_config['base_save_path'], log_to_file=train_config['vis_lo
 
 # yolo = init_model(config_map)
 yolo = YOLO(config_map, logger=logger, vis=my_vis)
-yolo_p = nn.DistributedDataParallel(yolo.to(device), device_ids=train_config['gpu_ids'])
+# yolo_p = nn.parallel.DistributedDataParallel(yolo.to(device), device_ids=train_config['gpu_ids'])
+yolo_p = nn.parallel.DataParallel(yolo.to(device), device_ids=train_config['gpu_ids'])
 if train_config['resume_from_path']:
     yolo_p.load_state_dict(torch.load(train_config['resume_from_path']))
 
@@ -136,8 +144,11 @@ for epoch in range(train_config['resume_epoch'], train_config['epoch_num']):
         #     param_group['lr'] = learning_rate
 
         my_vis.plot('now learning rate', optimizer.param_groups[0]['lr'])
+        # with torch.no_grad():
         img, label_bboxes = img.to(device), label_bboxes.to(device)
-
+        # img.requires_grad=True
+        # label_bboxes.requires_grad=True
+        print(label_bboxes)
         pred, now_loss = yolo_p(img, label_bboxes)
         # now_loss = compute_loss(pred, label_bboxes, yolo_p.module.yolo_layer_list, train_config['lbd_map'], logger, my_vis)
         my_vis.plot('total loss', now_loss.item() / img.shape[0])
