@@ -6,9 +6,7 @@
 * still debuging, need helps to debug together
 
 ### bugs
-* 1. can't train on big datasets, because of bad performance on big datasets.
-* 2. on little datasets like 1~8 picture could have expected result on the train datasets(but not every time can success), and every time trained results is different, need to find reasons.
-* 3. multi-GPU will hang! I have not find the reason but I guess maybe some modules not registered success, but single GPU could run.
+* 1. cause of encoder and compute loss write in the YOLO modules, when multi-GPU training, Tensors not on the same GPU card(target Tensor on GPU0, but pred Tensor is on the module's running GPU) but single GPU could run, try to remove compute loss and encoder to `cuda:0`.
 
 ##### run train
 * change Hyperparameters and data path in `configs/resnet18_yolo_style_fpn_yolov3.py`
@@ -19,7 +17,7 @@
 * if you wanna try little datasets, `yoloDataset(xxx,... little_train=8)` mean only use first 8 images to train
 
 ##### some visual results
-* FCN32-resnet18
+* YOLOv3-resnet18
   * ![detect_results](readme/yolo0.png)
   * ![detect_results](readme/yolo1.png)
   * ![detect_results](readme/yolo2.png)

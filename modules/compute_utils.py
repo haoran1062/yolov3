@@ -46,10 +46,6 @@ def drop_bbox(bbox, img_size=416):
             return None
     return bbox
 
-# mean = torch.tensor([0.485, 0.456, 0.406], dtype=torch.float32)
-# std = torch.tensor([0.229, 0.224, 0.225], dtype=torch.float32)
-# un_normal_trans = transforms.Normalize((-mean / std).tolist(), (1.0 / std).tolist())
-
 
 def get_names(in_path):
     ret_list = []

@@ -3,61 +3,50 @@ import numpy as np, torch
 import torch.nn as nn
 
 
-MSELoss = nn.MSELoss()
-CELoss = nn.CrossEntropyLoss()
-BCELoss = nn.BCEWithLogitsLoss()
 
+mse_loss = nn.MSELoss()
+bce_loss = nn.BCELoss()
+ce_loss = nn.CrossEntropyLoss()
+bce_log_loss = nn.BCEWithLogitsLoss()
 
-def compute_loss(pred, target, yolo_layer_list, cfg, logger, vis, device='cuda:0'):
+def compute_loss(self, pred_tensor, target, cuda=True):
     
-    batch_size = len(pred[0])
-    k = cfg['k'] * batch_size  # loss gain
-    xy_lbd = k * cfg['xy']
-    wh_lbd = k * cfg['wh']
-    cls_lbd = k * cfg['cls']
-    conf_lbd = k * cfg['conf']
+    ByteTensor = torch.cuda.ByteTensor if cuda else torch.ByteTensor
+    FloatTensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
 
-    cls_loss, xy_loss, wh_loss, confidence_loss = torch.FloatTensor([0]).to(device), torch.FloatTensor([0]).to(device), torch.FloatTensor([0]).to(device), torch.FloatTensor([0]).to(device)
+    k = self.lbd_cfg['k'] * self.batch_size
+    xy_lbd = k * self.lbd_cfg['xy']
+    wh_lbd = k * self.lbd_cfg['wh']
+    cls_lbd = k * self.lbd_cfg['cls']
+    conf_lbd = k * self.lbd_cfg['conf']
+
+    xy_loss, wh_loss, cls_loss, conf_loss = FloatTensor([0]), FloatTensor([0]), FloatTensor([0]), FloatTensor([0])
+    txy, twh, tcls, obj_indexs = self.encoder(target)
+    img_id, best_index, gx_index, gy_index = obj_indexs
+
+    now_device = txy.device
+    pred_tensor = pred_tensor.to(now_device)
+    pconf = torch.sigmoid(pred_tensor[..., 0])
+    tconf = torch.zeros_like(pconf)
     
-    for it in range(len(yolo_layer_list)):
-        now_pred = pred[it]
+    if len(img_id):
+        obj_pred = pred_tensor[obj_indexs].to(now_device)
+        tconf[obj_indexs] = 1. 
+        pxy = obj_pred[..., 1:3].sigmoid().to(now_device)
 
-        pred_confidence = now_pred[..., 0].sigmoid()
+        pwh = obj_pred[..., 3:5].to(now_device)
+        xy_loss += xy_lbd * mse_loss(pxy, txy)
+        wh_loss += wh_lbd * mse_loss(pwh, twh)
+        cls_loss += cls_lbd * ce_loss(obj_pred[..., 5:], tcls)
+    
+    conf_loss += conf_lbd * bce_loss(pconf, tconf)
+    all_loss = conf_loss + xy_loss + wh_loss + cls_loss
 
-        gt_confidence = torch.zeros_like(now_pred[..., 0])
+    # self.logger.info('stride %d yolo layer\t Loss: %.4f, confidence_loss: %.4f, xy_loss: %.4f, wh_loss: %.4f, classify_loss: %.4f, ' %(self.stride, total_loss.item() / self.batch_size, conf_loss.item(), xy_loss.item(), wh_loss.item(), cls_loss.item()) )
+    self.vis.plot('stride %d detect layer : confidence loss'%(self.stride), conf_loss.item())
+    self.vis.plot('stride %d detect layer : xy loss'%(self.stride), xy_loss.item())
+    self.vis.plot('stride %d detect layer : wh loss'%(self.stride), wh_loss.item())
+    self.vis.plot('stride %d detect layer : classify loss'%(self.stride), cls_loss.item())
+    self.vis.plot('stride %d total loss'%(self.stride), all_loss.item())
 
-        gt_cls, gt_xy, gt_wh, index_list = yolo_layer_list[it].encoder(target)
-
-        img_id, best_index, grid_x, grid_y = index_list
-        
-        now_pred = now_pred[img_id, best_index, grid_x, grid_y]
-
-        
-        gt_confidence[img_id, best_index, grid_x, grid_y] = 1
-
-        
-        pred_xy = now_pred[..., 1:3].sigmoid()
-        pred_wh = now_pred[..., 3:5]
-        pred_cls = now_pred[..., 5:] # .sigmoid()# (dim=-1)
-
-        confidence_loss += conf_lbd * BCELoss(pred_confidence, gt_confidence)
-        if len(img_id):
-            xy_loss += xy_lbd * MSELoss(pred_xy, gt_xy)
-            wh_loss += wh_lbd * MSELoss(pred_wh, gt_wh)
-            cls_loss += cls_lbd * CELoss(pred_cls, gt_cls)
-
-    total_loss = confidence_loss + xy_loss + wh_loss + cls_loss
-
-    logger.info('total Loss: %.4f, confidence_loss: %.4f, xy_loss: %.4f, wh_loss: %.4f, classify_loss: %.4f, ' %(total_loss.item() / batch_size, confidence_loss.item(), xy_loss.item(), wh_loss.item(), cls_loss.item()) )
-    vis.plot('confidence loss', confidence_loss.item())
-    vis.plot('xy loss', xy_loss.item())
-
-
-    vis.plot('wh loss', wh_loss.item())
-    vis.plot('classify loss', cls_loss.item())
-    vis.plot('total loss', total_loss.item() / batch_size)
-    return total_loss
-
-
-
-                
+    return all_loss

@@ -84,7 +84,7 @@ class Config(object):
             resume_from_path=None,
             resume_epoch=0,
             # train_txt_path="/data/datasets/yolo_txt/top300_truth_till_20190624.txt",
-            train_txt_path="/data/datasets/yolo_txt/top300_multi_truth_train_20190624.txt",
+            train_txt_path="datasets/2007_train.txt",
             test_txt_path="datasets/2007_train.txt",
             log_name="trainLog",
             base_save_path="/data/temp/resnet18_results",

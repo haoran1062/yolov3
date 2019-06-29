@@ -33,42 +33,15 @@ class YOLOLayer(nn.Module):
         self.grid_num = 0
         self.batch_size = 0
 
-        # self.mse_loss = nn.MSELoss()
-        # self.bce_loss = nn.BCELoss()
-        # self.ce_loss = nn.CrossEntropyLoss()
-        # self.bce_log_loss = nn.BCEWithLogitsLoss()
-
     def create_grid(self, grid_num, cuda=True):
         FloatTensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
         self.grid_num = grid_num
         nx, ny = self.grid_num, self.grid_num
         y_it, x_it = torch.meshgrid([torch.arange(ny), torch.arange(nx)])
-        # print(x_it.shape, y_it.shape)
         self.grid_xy = torch.stack((x_it, y_it), 2).view(1, 1, ny, nx, 2).type(FloatTensor)
-        # print(self.grid_xy.shape)
         self.anchor_wh = self.anchors / self.stride
         self.anchor_wh = self.anchor_wh.type(FloatTensor)
         self.anchor_decoder_wh = self.anchor_wh.view(1, len(self.anchors), 1, 1, 2).type(FloatTensor)
-
-
-
-
-    # def create_grids(self, img_size=416, ng=(13, 13), device='cpu'):
-    #     nx, ny = ng  # x and y grid size
-    #     self.img_size = img_size
-    #     self.stride = img_size / max(ng)
-
-    #     # build xy offsets
-    #     yv, xv = torch.meshgrid([torch.arange(ny), torch.arange(nx)])
-    #     self.grid_xy = torch.stack((xv, yv), 2).to(device).float().view((1, 1, ny, nx, 2))
-
-    #     # build wh gains
-    #     self.anchor_vec = self.anchors.to(device) / self.stride
-    #     self.anchor_wh = self.anchor_vec.view(1, self.na, 1, 1, 2).to(device)
-    #     self.ng = torch.Tensor(ng).to(device)
-    #     self.nx = nx
-    #     self.ny = ny
-
 
     def encoder(self, target, cuda=True):
         '''
@@ -83,15 +56,12 @@ class YOLOLayer(nn.Module):
         FloatTensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
         target = target.to(self.anchor_wh.device)
         img_id, label = target[:, :2].long().t()
-        # print(label)
         # convert normilzed 0~1 coord to grid normilzed coord
         target_bboxes = target[:, 2:] * self.grid_num
         gt_xy = target_bboxes[:, :2]
         gt_wh = target_bboxes[:, 2:]
         # gt contain obj index
         gt_index_j, gt_index_i = gt_xy.long().t()
-        # gt_index_i, gt_index_j = gt_xy.long().t()
-        # print(gt_index_i[gt_index_i == self.grid_num], gt_index_i[gt_index_i < 0], gt_index_j[gt_index_j == self.grid_num], gt_index_j[gt_index_j < 0])
 
         gt_anchor_ious = torch.stack([anchor_iou(self.anchor_wh[it], gt_wh) for it in range(len(self.anchor_wh))])
         best_ious, best_index = gt_anchor_ious.max(0)
@@ -102,19 +72,6 @@ class YOLOLayer(nn.Module):
         # print(gt_wh, self.anchor_wh)
         twh = torch.log(gt_wh / self.anchor_wh[best_index])
         tcls = label
-
-
-        # for it, now_ious in enumerate(gt_anchor_ious.t()):
-        #     noobj_mask[img_id[it], now_ious > self.iou_thresh, gt_index_i[it], gt_index_j[it]] = 0
-        
-        # obj_mask = 1 - noobj_mask
-        # tx[img_id, best_index, gt_index_i, gt_index_j] = gt_xy[:, 0] - gt_xy[:, 0].floor()
-        # ty[img_id, best_index, gt_index_i, gt_index_j] = gt_xy[:, 1] - gt_xy[:, 1].floor()
-        # tw[img_id, best_index, gt_index_i, gt_index_j] = torch.log(gt_wh[:, 0] / self.anchor_wh[best_index][:, 0])# + 1e-16)
-        # th[img_id, best_index, gt_index_i, gt_index_j] = torch.log(gt_wh[:, 1] / self.anchor_wh[best_index][:, 1])# + 1e-16)
-
-        # tconf = obj_mask.float()
-        
 
         return txy, twh, tcls, obj_index
 
@@ -142,11 +99,6 @@ class YOLOLayer(nn.Module):
         cls_lbd = k * self.lbd_cfg['cls']
         conf_lbd = k * self.lbd_cfg['conf']
 
-        # xy_lbd = 1. 
-        # wh_lbd = 1. 
-        # cls_lbd = 1. 
-        # conf_lbd = 1.
-
         xy_loss, wh_loss, cls_loss, conf_loss = FloatTensor([0]), FloatTensor([0]), FloatTensor([0]), FloatTensor([0])
         txy, twh, tcls, obj_indexs = self.encoder(target)
         img_id, best_index, gx_index, gy_index = obj_indexs
@@ -159,17 +111,13 @@ class YOLOLayer(nn.Module):
         if len(img_id):
             obj_pred = pred_tensor[obj_indexs].to(now_device)
             tconf[obj_indexs] = 1. 
-            # pxy = torch.sigmoid(obj_pred[..., 1:3])
             pxy = obj_pred[..., 1:3].sigmoid().to(now_device)
-            # print(pxy.device, txy.device)
-            # print(pxy)
-            # print(txy)
+
             pwh = obj_pred[..., 3:5].to(now_device)
             xy_loss += xy_lbd * mse_loss(pxy, txy)
             wh_loss += wh_lbd * mse_loss(pwh, twh)
             cls_loss += cls_lbd * ce_loss(obj_pred[..., 5:], tcls)
         
-        # conf_loss += conf_lbd * self.bce_log_loss(pconf, tconf)
         conf_loss += conf_lbd * bce_loss(pconf, tconf)
         all_loss = conf_loss + xy_loss + wh_loss + cls_loss
 
@@ -180,83 +128,17 @@ class YOLOLayer(nn.Module):
         self.vis.plot('stride %d detect layer : classify loss'%(self.stride), cls_loss.item())
         self.vis.plot('stride %d total loss'%(self.stride), all_loss.item())
 
-        # pobj_conf = pred_tensor[..., 0][obj_mask]# .sigmoid()
-        # pnoobj_conf = pred_tensor[..., 0][noobj_mask]
-        # px = torch.sigmoid(pred_tensor[..., 1])[cls_index]# .sigmoid()
-        # py = torch.sigmoid(pred_tensor[..., 2])[cls_index]# .sigmoid()
-        # pw = pred_tensor[..., 3][cls_index]
-        # ph = pred_tensor[..., 4][cls_index]
-        # pcls = pred_tensor[..., 5:][cls_index]# .sigmoid()
-
-        # tobj_conf = tconf[obj_mask]
-        # tnoobj_conf = tconf[noobj_mask]
-        # tx = tx[cls_index]
-        # ty = ty[cls_index]
-        # tw = tw[cls_index]
-        # th = th[cls_index]
-
-        # obj_conf_loss = self.obj_lbd * self.bce_log_loss(pobj_conf, tobj_conf)
-        # noobj_conf_loss = self.noobj_lbd * self.bce_log_loss(pnoobj_conf, tnoobj_conf)
-        # conf_loss = conf_lbd * (obj_conf_loss + noobj_conf_loss)
-        # x_loss = xy_lbd * self.mse_loss(px, tx)
-        # y_loss = xy_lbd * self.mse_loss(py, ty)
-        # w_loss = wh_lbd * self.mse_loss(pw, tw)
-        # h_loss = wh_lbd * self.mse_loss(ph, th)
-        # cls_loss = cls_lbd * self.ce_loss(pcls, cls_label)
-
-        # obj_conf_loss = self.obj_lbd * self.bce_loss(pconf[obj_mask], tconf[obj_mask])
-        # noobj_conf_loss = self.noobj_lbd * self.bce_loss(pconf[noobj_mask], tconf[noobj_mask])
-        # conf_loss = conf_lbd * (obj_conf_loss + noobj_conf_loss)
-        # x_loss = xy_lbd * self.mse_loss(px[cls_index], tx[cls_index])
-        # y_loss = xy_lbd * self.mse_loss(py[cls_index], ty[cls_index])
-        # w_loss = wh_lbd * self.mse_loss(pw[cls_index], tw[cls_index])
-        # h_loss = wh_lbd * self.mse_loss(ph[cls_index], th[cls_index])
-        # cls_loss = cls_lbd * self.ce_loss(pcls[cls_index], cls_label)
-
-
-        # cls_loss = cls_lbd * self.bce_loss(pcls[obj_mask], tcls[obj_mask])
-        # cls_loss = cls_lbd * self.bce_log_loss(pcls[obj_mask], tcls[obj_mask])
-
-
-        # print(pcls[obj_mask].shape, cls_label.shape)
-        
-        # _, top_cls = tcls[obj_mask].max(-1)
-        # print(top_cls)
-        # print(obj_mask)
-        # print(obj_mask.shape)
-        # print(top_cls[obj_mask].shape)
-        # cls_loss = cls_lbd * self.ce_loss(pcls[obj_mask], top_cls[obj_mask])
-
-        # total_loss = conf_loss + x_loss + y_loss + w_loss + h_loss + cls_loss
-
-        # self.logger.info('stride %d yolo layer\t Loss: %.4f, confidence_loss: %.4f, xy_loss: %.4f, wh_loss: %.4f, classify_loss: %.4f, ' %(self.stride, total_loss.item() / self.batch_size, conf_loss.item(), xy_loss.item(), wh_loss.item(), cls_loss.item()) )
-        # self.vis.plot('stride %d detect layer : confidence loss'%(self.stride), conf_loss.item())
-        # self.vis.plot('stride %d detect layer : obj loss'%(self.stride), obj_conf_loss.item())
-        # self.vis.plot('stride %d detect layer : noobj loss'%(self.stride), noobj_conf_loss.item())
-        # self.vis.plot('stride %d detect layer : x loss'%(self.stride), x_loss.item())
-        # self.vis.plot('stride %d detect layer : y loss'%(self.stride), y_loss.item())
-        # self.vis.plot('stride %d detect layer : w loss'%(self.stride), w_loss.item())
-        # self.vis.plot('stride %d detect layer : h loss'%(self.stride), h_loss.item())
-        # self.vis.plot('stride %d detect layer : classify loss'%(self.stride), cls_loss.item())
-        # self.vis.plot('total loss', total_loss.item() / self.batch_size)
-
         return all_loss
-
-
 
     def forward(self, x, target_tensor=None):
         self.batch_size = x.shape[0]
         grid_size = x.shape[2]
-        # print(x.shape)
         if grid_size != self.grid_num:
             self.create_grid(grid_size, x.is_cuda)
 
-        x = x.view(self.batch_size, self.anchor_num, -1, self.grid_num, self.grid_num).permute(0, 1, 3, 4, 2).contiguous()
-        # print(x.shape)
-        
+        x = x.view(self.batch_size, self.anchor_num, -1, self.grid_num, self.grid_num).permute(0, 1, 3, 4, 2).contiguous()        
 
         if self.training and target_tensor is not None:
-            # obj_mask, noobj_mask, tx, ty, tw, th, tcls, tconf, cls_label, cls_index = self.encoder(target_tensor)
             loss = self.compute_loss(x, target_tensor)
             return x, loss
         else:
@@ -291,9 +173,6 @@ class YOLO(nn.Module):
     
     def build_models(self):
         
-        # self.model_list.append(self.load_backbone(self.cfg.backbone_type[0], self.cfg.backbone_config[0]))
-        # self.model_list.append(self.load_fpn(self.cfg.fpn_config))
-        # self.model_list.append([nn.Sequential(i) for i in self.init_yolo_layers(self.cfg.yolo_layer_config_list, logger=self.logger, vis=self.vis)])
         self.load_backbone(self.cfg.backbone_type[0], self.cfg.backbone_config[0])
         self.model_names.append('backbone')
         self.load_fpn(self.cfg.fpn_config)
@@ -335,18 +214,10 @@ class YOLO(nn.Module):
                 pred_list.append(now_scale_pred)
                 total_loss += layer_loss
 
-        # feature_map_list = self.backbone(x)
-        # pyramid_output_list = self.fpn(feature_map_list)
-        
-        # for i in range(len(pyramid_output_list)):
-        #     now_scale_pred, layer_loss = self.yolo_layer_list[i](pyramid_output_list[i], target_tensor)
-        #     pred_list.append(now_scale_pred)
-        #     total_loss += layer_loss
         if self.training and target_tensor is not None:
             return pred_list, total_loss
         else:
             return torch.cat(pred_list, 1), total_loss
-            # return torch.cat(pred_list, 1), total_loss
 
 if __name__ == "__main__":
     from torchsummary import summary
