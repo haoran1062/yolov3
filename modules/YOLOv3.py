@@ -1,6 +1,6 @@
 # encoding:utf-8
 import os, sys, time
-sys.path.insert(0, '/data/projects/my_yolov3/modules')
+sys.path.insert(0, '/data/projects/simply_yolo_v3/modules')
 from backbones.OriginResNet import resnet18, resnet34, resnet50
 # print(sys.path)
 import torch, torch.nn as nn
@@ -9,6 +9,11 @@ from FPN import FPN
 # from modules.resnet50_yolo_style_fpn_yolov3 import Config
 from compute_utils import *
 from configs.resnet18_yolo_style_fpn_yolov3 import Config
+
+mse_loss = nn.MSELoss()
+bce_loss = nn.BCELoss()
+ce_loss = nn.CrossEntropyLoss()
+bce_log_loss = nn.BCEWithLogitsLoss()
 
 class YOLOLayer(nn.Module):
     def __init__(self, cfg, lbd_cfg, logger=None, vis=None, img_size=416):
@@ -20,32 +25,49 @@ class YOLOLayer(nn.Module):
         self.class_num = cfg['class_num']
         self.anchors = torch.Tensor(cfg['anchor_list']).to(self.device)
         self.anchor_num = len(self.anchors)
-        # self.grid_num = torch.Tensor(cfg['grid_num']).to(self.device)
         self.stride = cfg['stride']
         self.img_size = img_size
         self.logger=logger
         self.vis=vis
-        # self.create_grid()
         self.iou_thresh=cfg['iou_thresh']
         self.grid_num = 0
         self.batch_size = 0
 
-        self.mse_loss = nn.MSELoss()
-        self.bce_loss = nn.BCELoss()
-        self.ce_loss = nn.CrossEntropyLoss()
-        self.bce_log_loss = nn.BCEWithLogitsLoss()
+        # self.mse_loss = nn.MSELoss()
+        # self.bce_loss = nn.BCELoss()
+        # self.ce_loss = nn.CrossEntropyLoss()
+        # self.bce_log_loss = nn.BCEWithLogitsLoss()
 
     def create_grid(self, grid_num, cuda=True):
         FloatTensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
         self.grid_num = grid_num
         nx, ny = self.grid_num, self.grid_num
-        x_it, y_it = torch.meshgrid([torch.arange(nx), torch.arange(ny)])
+        y_it, x_it = torch.meshgrid([torch.arange(ny), torch.arange(nx)])
         # print(x_it.shape, y_it.shape)
-        self.grid_xy = torch.stack((x_it, y_it), 2).view(1, 1, nx, ny, 2).type(FloatTensor)
+        self.grid_xy = torch.stack((x_it, y_it), 2).view(1, 1, ny, nx, 2).type(FloatTensor)
         # print(self.grid_xy.shape)
         self.anchor_wh = self.anchors / self.stride
         self.anchor_wh = self.anchor_wh.type(FloatTensor)
         self.anchor_decoder_wh = self.anchor_wh.view(1, len(self.anchors), 1, 1, 2).type(FloatTensor)
+
+
+
+
+    # def create_grids(self, img_size=416, ng=(13, 13), device='cpu'):
+    #     nx, ny = ng  # x and y grid size
+    #     self.img_size = img_size
+    #     self.stride = img_size / max(ng)
+
+    #     # build xy offsets
+    #     yv, xv = torch.meshgrid([torch.arange(ny), torch.arange(nx)])
+    #     self.grid_xy = torch.stack((xv, yv), 2).to(device).float().view((1, 1, ny, nx, 2))
+
+    #     # build wh gains
+    #     self.anchor_vec = self.anchors.to(device) / self.stride
+    #     self.anchor_wh = self.anchor_vec.view(1, self.na, 1, 1, 2).to(device)
+    #     self.ng = torch.Tensor(ng).to(device)
+    #     self.nx = nx
+    #     self.ny = ny
 
 
     def encoder(self, target, cuda=True):
@@ -57,21 +79,9 @@ class YOLOLayer(nn.Module):
 
         '''
 
-
         ByteTensor = torch.cuda.ByteTensor if cuda else torch.ByteTensor
         FloatTensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
-
-        obj_mask = ByteTensor(self.batch_size, self.anchor_num, self.grid_num, self.grid_num).fill_(0)
-        noobj_mask = ByteTensor(self.batch_size, self.anchor_num, self.grid_num, self.grid_num).fill_(1)
-        tx = FloatTensor(self.batch_size, self.anchor_num, self.grid_num, self.grid_num).fill_(0)
-        ty = FloatTensor(self.batch_size, self.anchor_num, self.grid_num, self.grid_num).fill_(0)
-        tw = FloatTensor(self.batch_size, self.anchor_num, self.grid_num, self.grid_num).fill_(0)
-        th = FloatTensor(self.batch_size, self.anchor_num, self.grid_num, self.grid_num).fill_(0)
-        tcls = FloatTensor(self.batch_size, self.anchor_num, self.grid_num, self.grid_num, self.class_num).fill_(0)
-        # tlabel = FloatTensor(self.batch_size, self.anchor_num, self.grid_num, self.grid_num, 1).fill_(0)
-
-        # target_tensor = FloatTensor(self.batch_size, self.anchor_num, self.grid_num, self.grid_num, self.class_num + 5)
-        
+        target = target.to(self.anchor_wh.device)
         img_id, label = target[:, :2].long().t()
         # print(label)
         # convert normilzed 0~1 coord to grid normilzed coord
@@ -79,31 +89,34 @@ class YOLOLayer(nn.Module):
         gt_xy = target_bboxes[:, :2]
         gt_wh = target_bboxes[:, 2:]
         # gt contain obj index
-        gt_index_i, gt_index_j = gt_xy.long().t()
+        gt_index_j, gt_index_i = gt_xy.long().t()
+        # gt_index_i, gt_index_j = gt_xy.long().t()
         # print(gt_index_i[gt_index_i == self.grid_num], gt_index_i[gt_index_i < 0], gt_index_j[gt_index_j == self.grid_num], gt_index_j[gt_index_j < 0])
-        
 
         gt_anchor_ious = torch.stack([anchor_iou(self.anchor_wh[it], gt_wh) for it in range(len(self.anchor_wh))])
         best_ious, best_index = gt_anchor_ious.max(0)
-        
-        obj_mask[img_id, best_index, gt_index_i, gt_index_j] = 1
-        noobj_mask[img_id, best_index, gt_index_i, gt_index_j] = 0
+
+        obj_index = (img_id, best_index, gt_index_i, gt_index_j)
+
+        txy = gt_xy - gt_xy.floor()
+        # print(gt_wh, self.anchor_wh)
+        twh = torch.log(gt_wh / self.anchor_wh[best_index])
+        tcls = label
+
 
         # for it, now_ious in enumerate(gt_anchor_ious.t()):
         #     noobj_mask[img_id[it], now_ious > self.iou_thresh, gt_index_i[it], gt_index_j[it]] = 0
         
         # obj_mask = 1 - noobj_mask
-        tx[img_id, best_index, gt_index_i, gt_index_j] = gt_xy[:, 0] - gt_xy[:, 0].floor()
-        ty[img_id, best_index, gt_index_i, gt_index_j] = gt_xy[:, 1] - gt_xy[:, 1].floor()
-        tw[img_id, best_index, gt_index_i, gt_index_j] = torch.log(gt_wh[:, 0] / self.anchor_wh[best_index][:, 0])# + 1e-16)
-        th[img_id, best_index, gt_index_i, gt_index_j] = torch.log(gt_wh[:, 1] / self.anchor_wh[best_index][:, 1])# + 1e-16)
-        tcls[img_id, best_index, gt_index_i, gt_index_j, label] = 1
+        # tx[img_id, best_index, gt_index_i, gt_index_j] = gt_xy[:, 0] - gt_xy[:, 0].floor()
+        # ty[img_id, best_index, gt_index_i, gt_index_j] = gt_xy[:, 1] - gt_xy[:, 1].floor()
+        # tw[img_id, best_index, gt_index_i, gt_index_j] = torch.log(gt_wh[:, 0] / self.anchor_wh[best_index][:, 0])# + 1e-16)
+        # th[img_id, best_index, gt_index_i, gt_index_j] = torch.log(gt_wh[:, 1] / self.anchor_wh[best_index][:, 1])# + 1e-16)
+
+        # tconf = obj_mask.float()
         
 
-        tconf = obj_mask.float()
-        cls_index = (img_id, best_index, gt_index_i, gt_index_j)
-
-        return obj_mask, noobj_mask, tx, ty, tw, th, tcls, tconf, label, cls_index
+        return txy, twh, tcls, obj_index
 
     def decoder(self, eval_tensor):
         # batch_size = eval_tensor.shape[0]
@@ -119,7 +132,7 @@ class YOLOLayer(nn.Module):
 
         return output_tensor.view(self.batch_size, -1, last_dim_size)
 
-    def compute_loss(self, pred_tensor, obj_mask, noobj_mask, tx, ty, tw, th, tcls, tconf, cls_label, cls_index, cuda=True):
+    def compute_loss(self, pred_tensor, target, cuda=True):
         ByteTensor = torch.cuda.ByteTensor if cuda else torch.ByteTensor
         FloatTensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
 
@@ -129,27 +142,84 @@ class YOLOLayer(nn.Module):
         cls_lbd = k * self.lbd_cfg['cls']
         conf_lbd = k * self.lbd_cfg['conf']
 
-        pconf = pred_tensor[..., 0].sigmoid()
-        px = pred_tensor[..., 1].sigmoid()
-        py = pred_tensor[..., 2].sigmoid()
-        pw = pred_tensor[..., 3]
-        ph = pred_tensor[..., 4]
-        pcls = pred_tensor[..., 5:]# .sigmoid()
+        # xy_lbd = 1. 
+        # wh_lbd = 1. 
+        # cls_lbd = 1. 
+        # conf_lbd = 1.
 
-        obj_conf_loss = self.obj_lbd * self.bce_loss(pconf[obj_mask], tconf[obj_mask])
-        noobj_conf_loss = self.noobj_lbd * self.bce_loss(pconf[noobj_mask], tconf[noobj_mask])
-        conf_loss = conf_lbd * (obj_conf_loss + noobj_conf_loss)
-        x_loss = xy_lbd * self.mse_loss(px[cls_index], tx[cls_index])
-        y_loss = xy_lbd * self.mse_loss(py[cls_index], ty[cls_index])
-        w_loss = wh_lbd * self.mse_loss(pw[cls_index], tw[cls_index])
-        h_loss = wh_lbd * self.mse_loss(ph[cls_index], th[cls_index])
+        xy_loss, wh_loss, cls_loss, conf_loss = FloatTensor([0]), FloatTensor([0]), FloatTensor([0]), FloatTensor([0])
+        txy, twh, tcls, obj_indexs = self.encoder(target)
+        img_id, best_index, gx_index, gy_index = obj_indexs
+
+        now_device = txy.device
+        pred_tensor = pred_tensor.to(now_device)
+        pconf = torch.sigmoid(pred_tensor[..., 0])
+        tconf = torch.zeros_like(pconf)
+        
+        if len(img_id):
+            obj_pred = pred_tensor[obj_indexs].to(now_device)
+            tconf[obj_indexs] = 1. 
+            # pxy = torch.sigmoid(obj_pred[..., 1:3])
+            pxy = obj_pred[..., 1:3].sigmoid().to(now_device)
+            # print(pxy.device, txy.device)
+            # print(pxy)
+            # print(txy)
+            pwh = obj_pred[..., 3:5].to(now_device)
+            xy_loss += xy_lbd * mse_loss(pxy, txy)
+            wh_loss += wh_lbd * mse_loss(pwh, twh)
+            cls_loss += cls_lbd * ce_loss(obj_pred[..., 5:], tcls)
+        
+        # conf_loss += conf_lbd * self.bce_log_loss(pconf, tconf)
+        conf_loss += conf_lbd * bce_loss(pconf, tconf)
+        all_loss = conf_loss + xy_loss + wh_loss + cls_loss
+
+        # self.logger.info('stride %d yolo layer\t Loss: %.4f, confidence_loss: %.4f, xy_loss: %.4f, wh_loss: %.4f, classify_loss: %.4f, ' %(self.stride, total_loss.item() / self.batch_size, conf_loss.item(), xy_loss.item(), wh_loss.item(), cls_loss.item()) )
+        self.vis.plot('stride %d detect layer : confidence loss'%(self.stride), conf_loss.item())
+        self.vis.plot('stride %d detect layer : xy loss'%(self.stride), xy_loss.item())
+        self.vis.plot('stride %d detect layer : wh loss'%(self.stride), wh_loss.item())
+        self.vis.plot('stride %d detect layer : classify loss'%(self.stride), cls_loss.item())
+        self.vis.plot('stride %d total loss'%(self.stride), all_loss.item())
+
+        # pobj_conf = pred_tensor[..., 0][obj_mask]# .sigmoid()
+        # pnoobj_conf = pred_tensor[..., 0][noobj_mask]
+        # px = torch.sigmoid(pred_tensor[..., 1])[cls_index]# .sigmoid()
+        # py = torch.sigmoid(pred_tensor[..., 2])[cls_index]# .sigmoid()
+        # pw = pred_tensor[..., 3][cls_index]
+        # ph = pred_tensor[..., 4][cls_index]
+        # pcls = pred_tensor[..., 5:][cls_index]# .sigmoid()
+
+        # tobj_conf = tconf[obj_mask]
+        # tnoobj_conf = tconf[noobj_mask]
+        # tx = tx[cls_index]
+        # ty = ty[cls_index]
+        # tw = tw[cls_index]
+        # th = th[cls_index]
+
+        # obj_conf_loss = self.obj_lbd * self.bce_log_loss(pobj_conf, tobj_conf)
+        # noobj_conf_loss = self.noobj_lbd * self.bce_log_loss(pnoobj_conf, tnoobj_conf)
+        # conf_loss = conf_lbd * (obj_conf_loss + noobj_conf_loss)
+        # x_loss = xy_lbd * self.mse_loss(px, tx)
+        # y_loss = xy_lbd * self.mse_loss(py, ty)
+        # w_loss = wh_lbd * self.mse_loss(pw, tw)
+        # h_loss = wh_lbd * self.mse_loss(ph, th)
+        # cls_loss = cls_lbd * self.ce_loss(pcls, cls_label)
+
+        # obj_conf_loss = self.obj_lbd * self.bce_loss(pconf[obj_mask], tconf[obj_mask])
+        # noobj_conf_loss = self.noobj_lbd * self.bce_loss(pconf[noobj_mask], tconf[noobj_mask])
+        # conf_loss = conf_lbd * (obj_conf_loss + noobj_conf_loss)
+        # x_loss = xy_lbd * self.mse_loss(px[cls_index], tx[cls_index])
+        # y_loss = xy_lbd * self.mse_loss(py[cls_index], ty[cls_index])
+        # w_loss = wh_lbd * self.mse_loss(pw[cls_index], tw[cls_index])
+        # h_loss = wh_lbd * self.mse_loss(ph[cls_index], th[cls_index])
+        # cls_loss = cls_lbd * self.ce_loss(pcls[cls_index], cls_label)
+
 
         # cls_loss = cls_lbd * self.bce_loss(pcls[obj_mask], tcls[obj_mask])
         # cls_loss = cls_lbd * self.bce_log_loss(pcls[obj_mask], tcls[obj_mask])
 
 
         # print(pcls[obj_mask].shape, cls_label.shape)
-        cls_loss = cls_lbd * self.ce_loss(pcls[cls_index], cls_label)
+        
         # _, top_cls = tcls[obj_mask].max(-1)
         # print(top_cls)
         # print(obj_mask)
@@ -157,20 +227,20 @@ class YOLOLayer(nn.Module):
         # print(top_cls[obj_mask].shape)
         # cls_loss = cls_lbd * self.ce_loss(pcls[obj_mask], top_cls[obj_mask])
 
-        total_loss = conf_loss + x_loss + y_loss + w_loss + h_loss + cls_loss
+        # total_loss = conf_loss + x_loss + y_loss + w_loss + h_loss + cls_loss
 
         # self.logger.info('stride %d yolo layer\t Loss: %.4f, confidence_loss: %.4f, xy_loss: %.4f, wh_loss: %.4f, classify_loss: %.4f, ' %(self.stride, total_loss.item() / self.batch_size, conf_loss.item(), xy_loss.item(), wh_loss.item(), cls_loss.item()) )
-        self.vis.plot('stride %d detect layer : confidence loss'%(self.stride), conf_loss.item())
-        self.vis.plot('stride %d detect layer : obj loss'%(self.stride), obj_conf_loss.item())
-        self.vis.plot('stride %d detect layer : noobj loss'%(self.stride), noobj_conf_loss.item())
-        self.vis.plot('stride %d detect layer : x loss'%(self.stride), x_loss.item())
-        self.vis.plot('stride %d detect layer : y loss'%(self.stride), y_loss.item())
-        self.vis.plot('stride %d detect layer : w loss'%(self.stride), w_loss.item())
-        self.vis.plot('stride %d detect layer : h loss'%(self.stride), h_loss.item())
-        self.vis.plot('stride %d detect layer : classify loss'%(self.stride), cls_loss.item())
+        # self.vis.plot('stride %d detect layer : confidence loss'%(self.stride), conf_loss.item())
+        # self.vis.plot('stride %d detect layer : obj loss'%(self.stride), obj_conf_loss.item())
+        # self.vis.plot('stride %d detect layer : noobj loss'%(self.stride), noobj_conf_loss.item())
+        # self.vis.plot('stride %d detect layer : x loss'%(self.stride), x_loss.item())
+        # self.vis.plot('stride %d detect layer : y loss'%(self.stride), y_loss.item())
+        # self.vis.plot('stride %d detect layer : w loss'%(self.stride), w_loss.item())
+        # self.vis.plot('stride %d detect layer : h loss'%(self.stride), h_loss.item())
+        # self.vis.plot('stride %d detect layer : classify loss'%(self.stride), cls_loss.item())
         # self.vis.plot('total loss', total_loss.item() / self.batch_size)
 
-        return total_loss
+        return all_loss
 
 
 
@@ -186,8 +256,8 @@ class YOLOLayer(nn.Module):
         
 
         if self.training and target_tensor is not None:
-            obj_mask, noobj_mask, tx, ty, tw, th, tcls, tconf, cls_label, cls_index = self.encoder(target_tensor)
-            loss = self.compute_loss(x, obj_mask, noobj_mask, tx, ty, tw, th, tcls, tconf, cls_label, cls_index)
+            # obj_mask, noobj_mask, tx, ty, tw, th, tcls, tconf, cls_label, cls_index = self.encoder(target_tensor)
+            loss = self.compute_loss(x, target_tensor)
             return x, loss
         else:
             return self.decoder(x), 0

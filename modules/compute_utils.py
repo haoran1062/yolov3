@@ -6,8 +6,10 @@ from torchvision import models, transforms
 import torch.nn as nn
 import torch.nn.functional as F
 
-def anchor_iou(box1, box2):
+def anchor_iou(box1, box2, device='cuda:0'):
     # Returns the IoU of wh1 to wh2. wh1 is 2, wh2 is nx2
+    box1 = box1.to(device)
+    box2 = box2.to(device)
     box2 = box2.t()
     # w, h = box1
     w1, h1 = box1[0], box1[1]
@@ -80,9 +82,9 @@ def draw_debug_rect(img, bboxes, clss, confs, name_list, show_time=10000):
         print('un_norm bbox')
     # print(len(bboxes))
     for i, box in enumerate(bboxes):
-        # box = clip_bbox(box)
+        box = clip_bbox(box)
 
-        box = drop_bbox(box)
+        # box = drop_bbox(box)
         if box is None:
             continue
         # print(box)

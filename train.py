@@ -22,6 +22,7 @@ from modules.configs.resnet18_yolo_style_fpn_yolov3 import Config
 from utils.train_utils import *
 from modules.compute_utils import *
 import torch.optim as optim
+torch.backends.cudnn.benchmark=False
 
 parser = argparse.ArgumentParser(
     description='YOLO V1 Training params')
@@ -41,7 +42,7 @@ my_vis = Visual(train_config['base_save_path'], log_to_file=train_config['vis_lo
 
 # yolo = init_model(config_map)
 yolo = YOLO(config_map, logger=logger, vis=my_vis)
-yolo_p = nn.DataParallel(yolo.to(device), device_ids=train_config['gpu_ids'])
+yolo_p = nn.DistributedDataParallel(yolo.to(device), device_ids=train_config['gpu_ids'])
 if train_config['resume_from_path']:
     yolo_p.load_state_dict(torch.load(train_config['resume_from_path']))
 
@@ -57,8 +58,9 @@ epochs = train_config['epoch_num']
 
 
 learning_rate = 0.
-optimizer = optim.SGD(yolo_p.parameters(), lr=learning_rate, momentum=momentum, weight_decay=weight_decay) # , weight_decay=5e-4)
-# optimizer = optim.Adam(yolo_p.parameters())
+# optimizer = optim.SGD(yolo_p.parameters(), lr=lr0, momentum=momentum, weight_decay=weight_decay) # , weight_decay=5e-4)
+# optimizer = optim.SGD(yolo_p.parameters(), lr=learning_rate, momentum=momentum, weight_decay=weight_decay)
+optimizer = optim.Adam(yolo_p.parameters())
 
 # lf = lambda x: 1 - 10 ** (lrf * (1 - x / epochs))  # inverse exp ramp
 # scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lf, last_epoch= resume_epoch - 1)
@@ -67,7 +69,7 @@ optimizer = optim.SGD(yolo_p.parameters(), lr=learning_rate, momentum=momentum, 
 
 # yolo_p.load_state_dict(torch.load('densenet_sgd_S7_yolo.pth'))
 
-yolo_p.train()
+yolo_p.module.train()
 print(yolo_p)
 # exit()
 transform = transforms.Compose([
@@ -77,7 +79,7 @@ transform = transforms.Compose([
     ])
 
 
-train_dataset = yoloDataset(list_file=train_config['train_txt_path'], train=False, transform = transform, little_train=False, test_mode=False, device='cuda:0')
+train_dataset = yoloDataset(list_file=train_config['train_txt_path'], train=True, transform = transform, little_train=False, test_mode=False, device='cuda:0')
 train_loader = DataLoader(train_dataset, batch_size=train_config['batch_size'], shuffle=True, num_workers=train_config['worker_num'], collate_fn=train_dataset.collate_fn)
 
 test_dataset = yoloDataset(list_file=train_config['test_txt_path'], train=False, transform = transform, test_mode=False, device='cuda:0')
@@ -106,7 +108,7 @@ for epoch in range(train_config['resume_epoch'], train_config['epoch_num']):
     
     # scheduler.step()
 
-    yolo_p.train()
+    yolo_p.module.train()
 
     logger.info('\n\nStarting epoch %d / %d' % (epoch + 1, train_config['epoch_num']))
     logger.info('Learning Rate for this epoch: {}'.format(optimizer.param_groups[0]['lr']))
@@ -116,6 +118,10 @@ for epoch in range(train_config['resume_epoch'], train_config['epoch_num']):
     total_loss = 0.
     avg_loss = 0.
     
+    if epoch in [10, 100, 150]:
+        print(epoch)
+        pass
+
     for i,(img, label_bboxes) in enumerate(train_loader):
         # print('mask label : ', mask_label.shape, mask_label.dtype)
         # if epoch == 0 and i <= n_burnin:
@@ -125,9 +131,9 @@ for epoch in range(train_config['resume_epoch'], train_config['epoch_num']):
 
         it_st_time = time.clock()
         train_iter += 1
-        learning_rate = learning_rate_policy(train_iter, epoch, learning_rate, train_config['lr_adjust_map'], train_config['stop_down_iter'], train_config['add_lr'])
-        for param_group in optimizer.param_groups:
-            param_group['lr'] = learning_rate
+        # learning_rate = learning_rate_policy(train_iter, epoch, learning_rate, train_config['lr_adjust_map'], train_config['stop_down_iter'], train_config['add_lr'])
+        # for param_group in optimizer.param_groups:
+        #     param_group['lr'] = learning_rate
 
         my_vis.plot('now learning rate', optimizer.param_groups[0]['lr'])
         img, label_bboxes = img.to(device), label_bboxes.to(device)
@@ -138,20 +144,6 @@ for epoch in range(train_config['resume_epoch'], train_config['epoch_num']):
         total_loss += now_loss.data.item()
         # print(p_mask.shape, mask_label.shape)
         # exit()
-        if my_vis and i % train_config['show_img_iter_during_train'] == 0:
-            yolo_p.eval()
-            # img, label_bboxes = next(test_iter)
-            pred, _ = yolo_p(img[0].unsqueeze(0))
-            detect_tensor = non_max_suppression(pred.to('cpu'), conf_thres=0.5, nms_thres=0.1)
-            detect_tensor = detect_tensor[0]
-            show_img = unorm(img[0])
-            if detect_tensor is not None:
-                # print(show_img.shape)
-                show_img = draw_debug_rect(show_img.permute(1, 2 ,0), detect_tensor[..., 1:5], detect_tensor[..., -1], detect_tensor[..., -2], name_list)
-            my_vis.img('detect bboxes show', show_img)
-
-            yolo_p.train()
-            
 
         optimizer.zero_grad()
         now_loss.backward()
@@ -163,6 +155,20 @@ for epoch in range(train_config['resume_epoch'], train_config['epoch_num']):
             logger.info('Epoch [%d/%d], Iter [%d/%d] expect end in %.2f min. Loss: %.4f, average_loss: %.4f' %(epoch+1, train_config['epoch_num'], i+1, len(train_loader), it_cost_time * (len(train_loader) - i+1) // 60 , now_loss.item() / train_config['batch_size'], total_loss / (i+1) / train_config['batch_size']))
             num_iter += 1
         
+        if my_vis and i % train_config['show_img_iter_during_train'] == 0:
+            yolo_p.module.eval()
+            # img, label_bboxes = next(test_iter)
+            pred, _ = yolo_p(img[0].unsqueeze(0))
+            detect_tensor = non_max_suppression(pred.to('cpu'), conf_thres=0.5, nms_thres=0.1)
+            detect_tensor = detect_tensor[0]
+            show_img = unorm(img[0])
+            if detect_tensor is not None:
+                # print(show_img.shape)
+                show_img = draw_debug_rect(show_img.permute(1, 2 ,0), detect_tensor[..., 1:5], detect_tensor[..., -1], detect_tensor[..., -2], name_list)
+            my_vis.img('detect bboxes show', show_img)
+
+            yolo_p.module.train()
+        
     epoch_end_time = time.clock()
     epoch_cost_time = epoch_end_time - epoch_start_time
     now_epoch_train_loss = total_loss / (i+1)
@@ -170,7 +176,7 @@ for epoch in range(train_config['resume_epoch'], train_config['epoch_num']):
     logger.info('Epoch {} / {} finished, cost time {:.2f} min. expect {} min finish train.'.format(epoch, train_config['epoch_num'], epoch_cost_time / 60, (epoch_cost_time / 60) * (train_config['epoch_num'] - epoch + 1)))
 
     #validation
-    yolo_p.eval()
+    # yolo_p.eval()
     now_little_mAP = 0.0
     test_mAP = 0.0
 
