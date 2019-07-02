@@ -23,6 +23,7 @@ from utils.train_utils import *
 from modules.compute_utils import *
 import torch.optim as optim
 import torch.distributed as dist
+from modules.Loss import *
 # torch.backends.cudnn.benchmark=False
 os.environ['MASTER_ADDR'] = '127.0.0.1'
 os.environ['MASTER_PORT'] = '9999'
@@ -54,7 +55,7 @@ yolo_p = nn.parallel.DataParallel(yolo.to(device), device_ids=train_config['gpu_
 if train_config['resume_from_path']:
     yolo_p.load_state_dict(torch.load(train_config['resume_from_path']))
 
-print(yolo_p)
+# print(yolo_p)
 # summary(yolo_p, (3, 416, 416), batch_size=train_config['batch_size'])
 # exit()
 lr0 = train_config['lbd_map']['lr0']
@@ -72,8 +73,6 @@ optimizer = optim.Adam(yolo_p.parameters())
 
 # lf = lambda x: 1 - 10 ** (lrf * (1 - x / epochs))  # inverse exp ramp
 # scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lf, last_epoch= resume_epoch - 1)
-
-
 
 # yolo_p.load_state_dict(torch.load('densenet_sgd_S7_yolo.pth'))
 
@@ -111,6 +110,7 @@ n_burnin = 100
 name_list = get_names(config_map.name_path)
 make_color_list(config_map.class_num)
 
+FloatTensor = torch.cuda.FloatTensor
 
 for epoch in range(train_config['resume_epoch'], train_config['epoch_num']):
     
@@ -126,9 +126,9 @@ for epoch in range(train_config['resume_epoch'], train_config['epoch_num']):
     total_loss = 0.
     avg_loss = 0.
     
-    if epoch in [10, 100, 150]:
-        print(epoch)
-        pass
+    # if epoch in [10, 100, 150]:
+    #     print(epoch)
+    #     pass
 
     for i,(img, label_bboxes) in enumerate(train_loader):
         # print('mask label : ', mask_label.shape, mask_label.dtype)
@@ -148,8 +148,18 @@ for epoch in range(train_config['resume_epoch'], train_config['epoch_num']):
         img, label_bboxes = img.to(device), label_bboxes.to(device)
         # img.requires_grad=True
         # label_bboxes.requires_grad=True
-        print(label_bboxes)
-        pred, now_loss = yolo_p(img, label_bboxes)
+        # print(label_bboxes)
+        pred = yolo_p(img)
+        now_loss = FloatTensor([0.])
+        for it, now_pred_tensor in enumerate(pred):
+            now_layer_name = 'yolo_layer_%d'%(it)
+            layer_it = yolo_p.module.model_names.index(now_layer_name) if (now_layer_name in yolo_p.module.model_names) else -1
+            # print(layer_it)
+            # print(yolo_p.module.model_names)
+            assert layer_it != -1, 'find %s error!'%(now_layer_name)
+            # now_encode_pred_tensor = encoder(yolo_p.module.model_list[layer_it], label_bboxes)
+            now_loss += compute_loss(yolo_p.module.model_list[layer_it], now_pred_tensor, label_bboxes, vis=my_vis, logger=logger)
+
         # now_loss = compute_loss(pred, label_bboxes, yolo_p.module.yolo_layer_list, train_config['lbd_map'], logger, my_vis)
         my_vis.plot('total loss', now_loss.item() / img.shape[0])
         total_loss += now_loss.data.item()
@@ -169,7 +179,7 @@ for epoch in range(train_config['resume_epoch'], train_config['epoch_num']):
         if my_vis and i % train_config['show_img_iter_during_train'] == 0:
             yolo_p.module.eval()
             # img, label_bboxes = next(test_iter)
-            pred, _ = yolo_p(img[0].unsqueeze(0))
+            pred = yolo_p(img[0].unsqueeze(0))
             detect_tensor = non_max_suppression(pred.to('cpu'), conf_thres=0.5, nms_thres=0.1)
             detect_tensor = detect_tensor[0]
             show_img = unorm(img[0])

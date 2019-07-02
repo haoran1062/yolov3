@@ -76,9 +76,9 @@ class Config(object):
             },
 
 
-            gpu_ids= [0, 1],
-            worker_num=8,
-            batch_size=6,
+            gpu_ids= [0],
+            worker_num=0,
+            batch_size=16,
             epoch_num=15000,
             show_img_iter_during_train=1,
             resume_from_path=None,
