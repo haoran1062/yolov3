@@ -32,6 +32,7 @@ class YOLOLayer(nn.Module):
         self.iou_thresh=cfg['iou_thresh']
         self.grid_num = 0
         self.batch_size = 0
+        self.create_grid(13)
 
     def create_grid(self, grid_num, cuda=True):
         FloatTensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
@@ -63,7 +64,9 @@ class YOLOLayer(nn.Module):
         self.batch_size = x.shape[0]
         grid_size = x.shape[2]
         if grid_size != self.grid_num:
+            # print(grid_size, self.grid_num, x.device)
             self.create_grid(grid_size, x.is_cuda)
+            # print(grid_size, self.grid_num, x.device, self.anchor_wh)
 
         x = x.view(self.batch_size, self.anchor_num, -1, self.grid_num, self.grid_num).permute(0, 1, 3, 4, 2).contiguous()        
 

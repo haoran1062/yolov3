@@ -55,10 +55,10 @@ class Config(object):
         ]
 
         self.train_config = dict(
-            add_lr=0.00001*10,
-            stop_down_iter=100//10,
+            add_lr=0.00001,
+            stop_down_iter=100,
             lr_adjust_map= {
-                1: 0.001,
+                10: 0.001,
                 185: 0.0001,
                 335: 0.00001
             },
@@ -76,15 +76,17 @@ class Config(object):
             },
 
 
-            gpu_ids= [0],
-            worker_num=0,
-            batch_size=16,
+            gpu_ids= [0, 1],
+            worker_num=8,
+            batch_size=256,
             epoch_num=15000,
             show_img_iter_during_train=1,
             resume_from_path=None,
             resume_epoch=0,
             # train_txt_path="/data/datasets/yolo_txt/top300_truth_till_20190624.txt",
-            train_txt_path="datasets/2007_train.txt",
+            # train_txt_path="/data/datasets/yolo_txt/top300_truth_till_20190624+till_20190628.txt",
+            train_txt_path="/data/datasets/yolo_txt/top300_multi_truth_train_20190701.txt",
+            # train_txt_path="datasets/train.txt",
             test_txt_path="datasets/2007_train.txt",
             log_name="trainLog",
             base_save_path="/data/temp/resnet18_results",
@@ -93,7 +95,7 @@ class Config(object):
         )
 
         self.eval_config = dict(
-            gpu_ids= [0],
+            gpu_ids= [0, 1],
             worker_num=1,
             batch_size=32,
             test_txt_path="datasets/little_train.txt",

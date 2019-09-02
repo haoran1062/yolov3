@@ -20,7 +20,7 @@ def encoder(yolo_layer, target, cuda=True):
 
     ByteTensor = torch.cuda.ByteTensor if cuda else torch.ByteTensor
     FloatTensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
-    target = target.to(yolo_layer.anchor_wh.device)
+    # target = target.to(yolo_layer.anchor_wh.device)
     img_id, label = target[:, :2].long().t()
     # convert normilzed 0~1 coord to grid normilzed coord
     target_bboxes = target[:, 2:] * yolo_layer.grid_num
@@ -49,7 +49,7 @@ def compute_loss(yolo_layer, pred_tensor, target, cuda=True, vis=None, logger=No
     # now_device = target.device
     # target = target.to(now_device)
 
-    k = yolo_layer.lbd_cfg['k'] * yolo_layer.batch_size
+    k = yolo_layer.lbd_cfg['k'] * pred_tensor.shape[0]
     xy_lbd = k * yolo_layer.lbd_cfg['xy']
     wh_lbd = k * yolo_layer.lbd_cfg['wh']
     cls_lbd = k * yolo_layer.lbd_cfg['cls']
@@ -58,7 +58,7 @@ def compute_loss(yolo_layer, pred_tensor, target, cuda=True, vis=None, logger=No
     xy_loss, wh_loss, cls_loss, conf_loss = FloatTensor([0]), FloatTensor([0]), FloatTensor([0]), FloatTensor([0])
     txy, twh, tcls, obj_indexs = encoder(yolo_layer, target)
     img_id, best_index, gx_index, gy_index = obj_indexs
-
+    # print('target device: ', target.device, ' pred device: ', pred_tensor.device)
     # now_device = txy.device
     # pred_tensor = pred_tensor.to(now_device)
     pconf = torch.sigmoid(pred_tensor[..., 0])

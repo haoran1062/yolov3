@@ -68,8 +68,8 @@ epochs = train_config['epoch_num']
 
 learning_rate = 0.
 # optimizer = optim.SGD(yolo_p.parameters(), lr=lr0, momentum=momentum, weight_decay=weight_decay) # , weight_decay=5e-4)
-# optimizer = optim.SGD(yolo_p.parameters(), lr=learning_rate, momentum=momentum, weight_decay=weight_decay)
-optimizer = optim.Adam(yolo_p.parameters())
+optimizer = optim.SGD(yolo_p.parameters(), lr=learning_rate, momentum=momentum, weight_decay=weight_decay)
+# optimizer = optim.Adam(yolo_p.parameters())
 
 # lf = lambda x: 1 - 10 ** (lrf * (1 - x / epochs))  # inverse exp ramp
 # scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lf, last_epoch= resume_epoch - 1)
@@ -86,7 +86,7 @@ transform = transforms.Compose([
     ])
 
 
-train_dataset = yoloDataset(list_file=train_config['train_txt_path'], train=True, transform = transform, little_train=False, test_mode=False, device='cuda:0')
+train_dataset = yoloDataset(list_file=train_config['train_txt_path'], train=False, transform = transform, little_train=False, test_mode=False, device='cuda:0')
 train_loader = DataLoader(train_dataset, batch_size=train_config['batch_size'], shuffle=True, num_workers=train_config['worker_num'], collate_fn=train_dataset.collate_fn)
 
 test_dataset = yoloDataset(list_file=train_config['test_txt_path'], train=False, transform = transform, test_mode=False, device='cuda:0')
@@ -139,9 +139,9 @@ for epoch in range(train_config['resume_epoch'], train_config['epoch_num']):
 
         it_st_time = time.clock()
         train_iter += 1
-        # learning_rate = learning_rate_policy(train_iter, epoch, learning_rate, train_config['lr_adjust_map'], train_config['stop_down_iter'], train_config['add_lr'])
-        # for param_group in optimizer.param_groups:
-        #     param_group['lr'] = learning_rate
+        learning_rate = learning_rate_policy(train_iter, epoch, learning_rate, train_config['lr_adjust_map'], train_config['stop_down_iter'], train_config['add_lr'])
+        for param_group in optimizer.param_groups:
+            param_group['lr'] = learning_rate
 
         my_vis.plot('now learning rate', optimizer.param_groups[0]['lr'])
         # with torch.no_grad():
