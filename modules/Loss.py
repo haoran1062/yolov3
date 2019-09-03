@@ -21,16 +21,29 @@ def encoder(yolo_layer, target, cuda=True):
     ByteTensor = torch.cuda.ByteTensor if cuda else torch.ByteTensor
     FloatTensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
     # target = target.to(yolo_layer.anchor_wh.device)
-    img_id, label = target[:, :2].long().t()
-    # convert normilzed 0~1 coord to grid normilzed coord
+    t_len = len(target)
     target_bboxes = target[:, 2:] * yolo_layer.grid_num
-    gt_xy = target_bboxes[:, :2]
     gt_wh = target_bboxes[:, 2:]
     # gt contain obj index
-    gt_index_j, gt_index_i = gt_xy.long().t()
 
-    gt_anchor_ious = torch.stack([anchor_iou(yolo_layer.anchor_wh[it], gt_wh) for it in range(len(yolo_layer.anchor_wh))])
-    best_ious, best_index = gt_anchor_ious.max(0)
+    if t_len:
+
+        gt_anchor_ious = torch.stack([anchor_iou(yolo_layer.anchor_wh[it], gt_wh) for it in range(len(yolo_layer.anchor_wh))])
+        # best_ious, best_index = gt_anchor_ious.max(0)
+        gt_anchor_ious, best_index = gt_anchor_ious.max(0)
+
+        # gt_anchor_ious = [anchor_iou(yolo_layer.anchor_wh[it], gt_wh) for it in range(len(yolo_layer.anchor_wh))]
+        # gt_anchor_ious, best_index = torch.stack(gt_anchor_ious, 0).max(0)  # best iou and anchor
+
+        j = gt_anchor_ious > yolo_layer.iou_thresh
+        t, best_index, gt_wh, target_bboxes = target[j], best_index[j], gt_wh[j], target_bboxes[j]
+
+
+    img_id, label = t[:, :2].long().t()
+    # convert normilzed 0~1 coord to grid normilzed coord
+    
+    gt_xy = target_bboxes[:, :2]
+    gt_index_j, gt_index_i = gt_xy.long().t()
 
     obj_index = (img_id, best_index, gt_index_i, gt_index_j)
 

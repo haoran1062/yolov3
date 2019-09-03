@@ -17,6 +17,7 @@ class Config(object):
             kernel_sizes=[1, 3, 1, 3, 1],
             middle_channel=512,
             in_channels=[128, 256, 512], 
+            # in_channels=[256, 512],
             upsample_scale=2, 
             upsample_mode='nearest'
         )
@@ -76,16 +77,17 @@ class Config(object):
             },
 
 
-            gpu_ids= [0, 1],
+            gpu_ids= [0],
             worker_num=8,
-            batch_size=256,
+            batch_size=18,
             epoch_num=15000,
-            show_img_iter_during_train=1,
+            show_img_iter_during_train=10,
             resume_from_path=None,
             resume_epoch=0,
             # train_txt_path="/data/datasets/yolo_txt/top300_truth_till_20190624.txt",
             # train_txt_path="/data/datasets/yolo_txt/top300_truth_till_20190624+till_20190628.txt",
-            train_txt_path="/data/datasets/yolo_txt/top300_multi_truth_train_20190701.txt",
+            train_txt_path="datasets/2007_train.txt",
+            # train_txt_path="datasets/little_train.txt",
             # train_txt_path="datasets/train.txt",
             test_txt_path="datasets/2007_train.txt",
             log_name="trainLog",
