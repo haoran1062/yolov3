@@ -32,7 +32,7 @@ class YOLOLayer(nn.Module):
         self.iou_thresh=cfg['iou_thresh']
         self.grid_num = 0
         self.batch_size = 0
-        self.create_grid(13)
+        self.create_grid(img_size // self.stride)
 
     def create_grid(self, grid_num, cuda=True):
         FloatTensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
