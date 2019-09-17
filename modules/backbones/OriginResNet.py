@@ -140,17 +140,26 @@ class ResNet(nn.Module):
 
     def forward(self, x):
         # print(x.shape, x.device, torch.backends.cudnn.benchmark)
-        c1 = x = self.conv1(x)
+        c1, c2, c3, c4 = None, None, None, None
+        x = self.conv1(x)
+        if self.layer_st == 0:
+            c1 = x
         x = self.bn1(x)
         x = self.relu(x)
         x = self.maxpool(x)
 
-        c2 = x = self.layer1(x)
-        c3 = x = self.layer2(x)
-        c4 = x = self.layer3(x)
-        c5 = x = self.layer4(x)
+        x = self.layer1(x)
+        if self.layer_st <= 1:
+            c2 = x
+        x = self.layer2(x)
+        if self.layer_st <= 2:
+            c3 = x
+        x = self.layer3(x)
+        if self.layer_st <= 3:
+            c4 = x
+        x = self.layer4(x)
 
-        output_layer_list = [c1, c2, c3, c4, c5]
+        output_layer_list = [c1, c2, c3, c4, x]
 
         return output_layer_list[self.layer_st:self.layer_ed]
 

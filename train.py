@@ -71,9 +71,6 @@ learning_rate = 0.
 optimizer = optim.SGD(yolo_p.parameters(), lr=learning_rate, momentum=momentum, weight_decay=weight_decay)
 # optimizer = optim.Adam(yolo_p.parameters())
 
-# lf = lambda x: 1 - 10 ** (lrf * (1 - x / epochs))  # inverse exp ramp
-# scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lf, last_epoch= resume_epoch - 1)
-
 # yolo_p.load_state_dict(torch.load('densenet_sgd_S7_yolo.pth'))
 
 yolo_p.module.train()
@@ -114,8 +111,6 @@ FloatTensor = torch.cuda.FloatTensor
 
 for epoch in range(train_config['resume_epoch'], train_config['epoch_num']):
     
-    # scheduler.step()
-
     yolo_p.module.train()
 
     logger.info('\n\nStarting epoch %d / %d' % (epoch + 1, train_config['epoch_num']))
@@ -125,17 +120,8 @@ for epoch in range(train_config['resume_epoch'], train_config['epoch_num']):
     
     total_loss = 0.
     avg_loss = 0.
-    
-    # if epoch in [10, 100, 150]:
-    #     print(epoch)
-    #     pass
 
     for i,(img, label_bboxes) in enumerate(train_loader):
-        # print('mask label : ', mask_label.shape, mask_label.dtype)
-        # if epoch == 0 and i <= n_burnin:
-        #     lr = lr0 * (i / n_burnin) ** 4
-        #     for x in optimizer.param_groups:
-        #         x['lr'] = lr
 
         it_st_time = time.clock()
         train_iter += 1
@@ -144,23 +130,17 @@ for epoch in range(train_config['resume_epoch'], train_config['epoch_num']):
             param_group['lr'] = learning_rate
 
         my_vis.plot('now learning rate', optimizer.param_groups[0]['lr'])
-        # with torch.no_grad():
         img, label_bboxes = img.to(device), label_bboxes.to(device)
-        # img.requires_grad=True
-        # label_bboxes.requires_grad=True
-        # print(label_bboxes)
+
         pred = yolo_p(img)
         now_loss = FloatTensor([0.])
         for it, now_pred_tensor in enumerate(pred):
             now_layer_name = 'yolo_layer_%d'%(it)
             layer_it = yolo_p.module.model_names.index(now_layer_name) if (now_layer_name in yolo_p.module.model_names) else -1
-            # print(layer_it)
-            # print(yolo_p.module.model_names)
+
             assert layer_it != -1, 'find %s error!'%(now_layer_name)
-            # now_encode_pred_tensor = encoder(yolo_p.module.model_list[layer_it], label_bboxes)
             now_loss += compute_loss(yolo_p.module.model_list[layer_it], now_pred_tensor, label_bboxes, vis=my_vis, logger=logger)
 
-        # now_loss = compute_loss(pred, label_bboxes, yolo_p.module.yolo_layer_list, train_config['lbd_map'], logger, my_vis)
         my_vis.plot('total loss', now_loss.item() / img.shape[0])
         total_loss += now_loss.data.item()
         # print(p_mask.shape, mask_label.shape)

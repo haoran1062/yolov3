@@ -27,14 +27,8 @@ def encoder(yolo_layer, target, cuda=True):
     # gt contain obj index
 
     if t_len:
-
         gt_anchor_ious = torch.stack([anchor_iou(yolo_layer.anchor_wh[it], gt_wh) for it in range(len(yolo_layer.anchor_wh))])
-        # best_ious, best_index = gt_anchor_ious.max(0)
         gt_anchor_ious, best_index = gt_anchor_ious.max(0)
-
-        # gt_anchor_ious = [anchor_iou(yolo_layer.anchor_wh[it], gt_wh) for it in range(len(yolo_layer.anchor_wh))]
-        # gt_anchor_ious, best_index = torch.stack(gt_anchor_ious, 0).max(0)  # best iou and anchor
-
         j = gt_anchor_ious > yolo_layer.iou_thresh
         t, best_index, gt_wh, target_bboxes = target[j], best_index[j], gt_wh[j], target_bboxes[j]
 
@@ -79,19 +73,10 @@ def compute_loss(yolo_layer, pred_tensor, target, cuda=True, vis=None, logger=No
     
     if len(img_id):
         obj_pred = pred_tensor[obj_indexs]# .to(now_device)
-        # print(obj_pred.shape, obj_pred.device)
-        # print(obj_pred.to('cuda:0'))
         tconf[obj_indexs] = 1. 
         pxy = obj_pred[..., 1:3].sigmoid() #.to(now_device)
 
         pwh = obj_pred[..., 3:5] #.to(now_device)
-        # print('*'*30)
-        # print('now device: ', now_device)
-        # print(pxy.device, txy.device)
-        # print(txy)
-        # print(pxy)
-        # print(pxy.shape, txy.shape)
-        # print('*'*30)
         xy_loss += xy_lbd * mse_loss(pxy, txy)
         wh_loss += wh_lbd * mse_loss(pwh, twh)
         cls_loss += cls_lbd * ce_loss(obj_pred[..., 5:], tcls)
@@ -99,7 +84,6 @@ def compute_loss(yolo_layer, pred_tensor, target, cuda=True, vis=None, logger=No
     conf_loss += conf_lbd * bce_loss(pconf, tconf)
     all_loss = conf_loss + xy_loss + wh_loss + cls_loss
 
-    # self.logger.info('stride %d yolo layer\t Loss: %.4f, confidence_loss: %.4f, xy_loss: %.4f, wh_loss: %.4f, classify_loss: %.4f, ' %(self.stride, total_loss.item() / self.batch_size, conf_loss.item(), xy_loss.item(), wh_loss.item(), cls_loss.item()) )
     vis.plot('stride %d detect layer : confidence loss'%(yolo_layer.stride), conf_loss.item())
     vis.plot('stride %d detect layer : xy loss'%(yolo_layer.stride), xy_loss.item())
     vis.plot('stride %d detect layer : wh loss'%(yolo_layer.stride), wh_loss.item())

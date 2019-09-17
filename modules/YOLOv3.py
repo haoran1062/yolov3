@@ -64,9 +64,7 @@ class YOLOLayer(nn.Module):
         self.batch_size = x.shape[0]
         grid_size = x.shape[2]
         if grid_size != self.grid_num:
-            # print(grid_size, self.grid_num, x.device)
             self.create_grid(grid_size, x.is_cuda)
-            # print(grid_size, self.grid_num, x.device, self.anchor_wh)
 
         x = x.view(self.batch_size, self.anchor_num, -1, self.grid_num, self.grid_num).permute(0, 1, 3, 4, 2).contiguous()        
 
@@ -82,13 +80,10 @@ class YOLO(nn.Module):
     def __init__(self, cfg, logger=None, vis=None, device='cuda:0'):
         super(YOLO, self).__init__()
         self.cfg=cfg
-        # self.backbone = self.load_backbone(cfg.backbone_type[0], cfg.backbone_config[0]).to(device)
-        # self.fpn = self.load_fpn(cfg.fpn_config).to(device)
         self.device = device
         self.logger=logger
         self.vis=vis
         self.lbd_cfg = cfg.train_config['lbd_map']
-        # self.yolo_layer_list = nn.ModuleList(self.init_yolo_layers(cfg.yolo_layer_config_list, logger=logger, vis=vis))
         self.model_list = nn.ModuleList()
         self.model_names = []
 
@@ -98,8 +93,6 @@ class YOLO(nn.Module):
     def init_yolo_layers(self, yolo_layer_config_list, logger=None, vis=None):
         for now_map in yolo_layer_config_list:
             self.model_list.append(YOLOLayer(now_map, self.lbd_cfg, logger=logger, vis=vis))
-            # yolo_layer_list.append(YOLOLayer(now_map, self.lbd_cfg, logger=logger, vis=vis).to(self.device))
-        # return yolo_layer_list
     
     def build_models(self):
         
@@ -146,55 +139,3 @@ class YOLO(nn.Module):
             return pred_list
         else:
             return torch.cat(pred_list, 1)
-
-if __name__ == "__main__":
-    from torchsummary import summary
-    from YOLODatasets import yoloDataset
-    from compute_utils import cv_resize, draw_debug_rect
-    from torch.utils.data import Dataset, DataLoader
-    import torchvision.transforms as transforms
-    from Loss import *
-
-    temp_config = Config()
-    device = 'cuda:0'
-    # backbone = resnet18()
-    # fpn = FPN(backbone, temp_config.fpn_config)
-    # yolo = YOLO(fpn, temp_config).to(device)
-    yolo = YOLO(temp_config)
-    # summary(yolo, (3, 416, 416))
-    print(yolo)
-
-    transform = transforms.Compose([
-        transforms.Lambda(cv_resize),
-        transforms.ToTensor(),
-        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
-    ])
-    train_dataset = yoloDataset(list_file='datasets/2007_train.txt',train=False, transform = transform, test_mode=True, device='cuda:0')
-    train_loader = DataLoader(train_dataset, batch_size=24, shuffle=True, num_workers=0, collate_fn=train_dataset.collate_fn)
-    train_iter = iter(train_loader)
-
-    for i in range(200):
-        # temp = next(train_iter)
-        # print(temp)
-        img, label_bboxes = next(train_iter)
-        img, label_bboxes = img.to(device), label_bboxes.to(device)
-        # print(img.is_cuda)
-        pred = yolo(img)
-        now_loss = compute_loss(pred, label_bboxes, yolo.yolo_layer_list)
-        print(now_loss)
-        # cls_id, gt_xy, gt_wh, index_list = yolo.yolo_layer_list[-1].encoder(label_bboxes)
-        # print(cls_id, gt_xy, gt_wh, index_list)
-        # print(img.shape, label_bboxes.shape)
-        # print(label_bboxes)
-        mean = torch.tensor([0.485, 0.456, 0.406], dtype=torch.float32)
-        std = torch.tensor([0.229, 0.224, 0.225], dtype=torch.float32)
-        un_normal_trans = transforms.Normalize((-mean / std).tolist(), (1.0 / std).tolist())
-        img = un_normal_trans(img[1].squeeze(0))
-        temp_label_bboxes = label_bboxes[label_bboxes[:, 0] == 1.0]
-        # print(temp_label_bboxes, temp_label_bboxes.shape)
-        img = draw_debug_rect(img.permute(1, 2 ,0), temp_label_bboxes[..., 2:], temp_label_bboxes[..., 1])
-        cv2.imshow('img', img)
-        
-        if cv2.waitKey(12000)&0xFF == ord('q'):
-            break
-

@@ -78,7 +78,7 @@ class Config(object):
 
 
             gpu_ids= [0],
-            worker_num=0,
+            worker_num=4,
             batch_size=18,
             epoch_num=15000,
             show_img_iter_during_train=10,
@@ -97,7 +97,7 @@ class Config(object):
         )
 
         self.eval_config = dict(
-            gpu_ids= [0, 1],
+            gpu_ids= [0],
             worker_num=1,
             batch_size=32,
             test_txt_path="datasets/little_train.txt",
