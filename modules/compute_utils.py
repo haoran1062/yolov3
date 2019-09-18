@@ -24,6 +24,9 @@ def anchor_iou(box1, box2, device='cuda:0'):
 def cv_resize(img, resize=416):
     return cv2.resize(img, (resize, resize))
 
+def padding_resize(img, resize=416):
+    pass
+
 def bbox_un_norm(bboxes, im_size=(416, 416)):
     t_boxes = []
     for i in range(len(bboxes)):

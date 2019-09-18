@@ -4,11 +4,13 @@ class Config(object):
     def __init__(self):
         super(Config, self).__init__()
         self.class_num = 20
-        self.backbone_type='resnet18',
+        self.backbone_type='resnet18'
+        self.multi_scale = True
+        self.input_size = 416
         self.backbone_config = dict(
             layer_st=2,
             layer_ed=5,
-        ),
+        )
         self.fpn_config = dict(
             classes_num=self.class_num, 
             anchor_num=3,
@@ -79,7 +81,7 @@ class Config(object):
 
             gpu_ids= [0],
             worker_num=4,
-            batch_size=18,
+            batch_size=8,
             epoch_num=15000,
             show_img_iter_during_train=10,
             resume_from_path=None,

@@ -1,5 +1,5 @@
 # encoding:utf-8
-import os, cv2, logging, numpy as np, time, json, argparse
+import os, cv2, logging, numpy as np, time, json, argparse, random
 import torch
 
 import torch.nn as nn
@@ -76,17 +76,17 @@ optimizer = optim.SGD(yolo_p.parameters(), lr=learning_rate, momentum=momentum, 
 yolo_p.module.train()
 print(yolo_p)
 # exit()
-transform = transforms.Compose([
-        transforms.Lambda(cv_resize),
-        transforms.ToTensor(),
-        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
-    ])
+# transform = transforms.Compose([
+#         transforms.Lambda(cv_resize),
+#         transforms.ToTensor(),
+#         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+#     ])
 
 
-train_dataset = yoloDataset(list_file=train_config['train_txt_path'], train=False, transform = transform, little_train=False, test_mode=False, device='cuda:0')
+train_dataset = yoloDataset(list_file=train_config['train_txt_path'], train=False, little_train=False, test_mode=False)
 train_loader = DataLoader(train_dataset, batch_size=train_config['batch_size'], shuffle=True, num_workers=train_config['worker_num'], collate_fn=train_dataset.collate_fn)
 
-test_dataset = yoloDataset(list_file=train_config['test_txt_path'], train=False, transform = transform, test_mode=False, device='cuda:0')
+test_dataset = yoloDataset(list_file=train_config['test_txt_path'], train=False, test_mode=False)
 test_loader = DataLoader(test_dataset, batch_size=1, shuffle=True, num_workers=train_config['worker_num'], collate_fn=train_dataset.collate_fn)
 test_iter = iter(test_loader)
 
@@ -109,11 +109,21 @@ make_color_list(config_map.class_num)
 
 FloatTensor = torch.cuda.FloatTensor
 
+if config_map.multi_scale:
+    min_input_size = config_map.input_size
+    max_input_size = config_map.input_size + 32 * 6
+    input_size_list = [i for i in range(max_input_size, min_input_size, -32)]
+
+epoch_input_size = config_map.input_size
 for epoch in range(train_config['resume_epoch'], train_config['epoch_num']):
-    
+    if config_map.multi_scale:
+        epoch_input_size = input_size_list[epoch % len(input_size_list)] # random.choice(input_size_list)
+        train_dataset.input_size = epoch_input_size
+        # test_dataset.input_size = epoch_input_size
+
     yolo_p.module.train()
 
-    logger.info('\n\nStarting epoch %d / %d' % (epoch + 1, train_config['epoch_num']))
+    logger.info('\n\nStarting epoch %d / %d, input size: %d' % (epoch + 1, train_config['epoch_num'], epoch_input_size))
     logger.info('Learning Rate for this epoch: {}'.format(optimizer.param_groups[0]['lr']))
 
     epoch_start_time = time.clock()
@@ -160,7 +170,7 @@ for epoch in range(train_config['resume_epoch'], train_config['epoch_num']):
             yolo_p.module.eval()
             # img, label_bboxes = next(test_iter)
             pred = yolo_p(img[0].unsqueeze(0))
-            detect_tensor = non_max_suppression(pred.to('cpu'), conf_thres=0.5, nms_thres=0.1)
+            detect_tensor = non_max_suppression(pred.to('cpu'), conf_thres=0.5, nms_thres=0.25)
             detect_tensor = detect_tensor[0]
             show_img = unorm(img[0])
             if detect_tensor is not None:

@@ -30,7 +30,7 @@ class YOLOLayer(nn.Module):
         self.logger=logger
         self.vis=vis
         self.iou_thresh=cfg['iou_thresh']
-        self.grid_num = 0
+        self.grid_num = img_size // self.stride
         self.batch_size = 0
         self.create_grid(img_size // self.stride)
 
@@ -64,8 +64,11 @@ class YOLOLayer(nn.Module):
         self.batch_size = x.shape[0]
         grid_size = x.shape[2]
         if grid_size != self.grid_num:
+            print('-'*20)
+            print(grid_size, self.grid_num)
             self.create_grid(grid_size, x.is_cuda)
-
+            print(grid_size, self.grid_num)
+            print('-'*20)
         x = x.view(self.batch_size, self.anchor_num, -1, self.grid_num, self.grid_num).permute(0, 1, 3, 4, 2).contiguous()        
 
         if self.training:
@@ -96,7 +99,7 @@ class YOLO(nn.Module):
     
     def build_models(self):
         
-        self.load_backbone(self.cfg.backbone_type[0], self.cfg.backbone_config[0])
+        self.load_backbone(self.cfg.backbone_type, self.cfg.backbone_config)
         self.model_names.append('backbone')
         self.load_fpn(self.cfg.fpn_config)
         self.model_names.append('fpn')

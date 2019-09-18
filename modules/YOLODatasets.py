@@ -8,25 +8,27 @@ import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 import imgaug as ia
 from imgaug import augmenters as iaa
-# from utils import *
+from copy import deepcopy
 ia.seed(random.randint(1, 10000))
 
 
 class yoloDataset(Dataset):
-    image_size = 416
-    def __init__(self, list_file, train, transform, device, little_train=False, with_file_path=False, C = 20, test_mode=False):
+    def __init__(self, list_file, train, little_train=False, with_file_path=False, C = 20, input_size=416, test_mode=False):
         print('data init')
         
         self.train = train
-        self.transform=transform
+        # self.transform=transform
         self.fnames = []
         self.boxes = []
         self.labels = []
-        self.resize = 416
+        self.input_size = input_size
         self.C = C
-        self.device = device
         self._test = test_mode
         self.with_file_path = with_file_path
+        self.transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+        ])
         self.img_augsometimes = lambda aug: iaa.Sometimes(0.25, aug)
         self.bbox_augsometimes = lambda aug: iaa.Sometimes(0.5, aug)
 
@@ -107,7 +109,7 @@ class yoloDataset(Dataset):
         return torch.Tensor(bboxes)
 
     
-    def convertXYWH2XYXY(self, bboxes, im_size=(image_size, image_size)):
+    def convertXYWH2XYXY(self, bboxes):
         '''
             input: tensor [Cx, Cy, w, h] normalized bboxes
             output: python list [x1, y1, x2, y2] abs bboxes
@@ -116,13 +118,22 @@ class yoloDataset(Dataset):
         t_boxes = []
         for i in range(bboxes.size()[0]):
             [x, y, w, h] = bboxes[i].tolist()
-            x1 = int( (x - 0.5*w) * im_size[0] )
-            y1 = int( (y - 0.5*h) * im_size[1] )
-            x2 = int( (x + 0.5*w) * im_size[0] )
-            y2 = int( (y + 0.5*h) * im_size[1] )
+            x1 = int( (x - 0.5*w) * self.input_size )
+            y1 = int( (y - 0.5*h) * self.input_size )
+            x2 = int( (x + 0.5*w) * self.input_size )
+            y2 = int( (y + 0.5*h) * self.input_size )
             t_boxes.append([x1, y1, x2, y2])
         return t_boxes
     
+    def convertXYXY2XYWH(self, x):
+        # Convert bounding box format from [x1, y1, x2, y2] to [x, y, w, h]
+        y = torch.zeros_like(x) if isinstance(x, torch.Tensor) else np.zeros_like(x)
+        y[:, 0] = (x[:, 0] + x[:, 2]) / 2
+        y[:, 1] = (x[:, 1] + x[:, 3]) / 2
+        y[:, 2] = x[:, 2] - x[:, 0]
+        y[:, 3] = x[:, 3] - x[:, 1]
+        return y
+
     def convert2augbbox(self, img, bboxes):
         '''
             input: tensor list [x1, y1, x2, y2] abs bboxes
@@ -140,7 +151,7 @@ class yoloDataset(Dataset):
             t_boxes.append([bboxes.bounding_boxes[i].x1, bboxes.bounding_boxes[i].y1, bboxes.bounding_boxes[i].x2, bboxes.bounding_boxes[i].y2])
         return t_boxes
 
-    def convertAugbbox2XYWH(self, bboxes, im_size=(image_size, image_size)):
+    def convertAugbbox2XYWH(self, bboxes):
         t_boxes = []
         bboxes = self.convertaugbbox2X1Y1X2Y2(bboxes)
         for [x1, y1, x2, y2] in bboxes:
@@ -148,12 +159,40 @@ class yoloDataset(Dataset):
             cy = (y2 + y1)/2. - 1
             w = x2 - x1
             h = y2 - y1
-            cx /= im_size[0]
-            cy /= im_size[1]
-            w /= im_size[0]
-            h /= im_size[1]
+            cx /= self.input_size
+            cy /= self.input_size
+            w /= self.input_size
+            h /= self.input_size
             t_boxes.append([cx, cy, w, h])
         return t_boxes
+
+    def padding_img_and_labels(self, img, labels, reshape=416, padding_color=(127.5, 127.5, 127.5)):
+
+        shape = img.shape[:2]  # current shape [height, width]
+        h, w = shape
+        if isinstance(reshape, int):
+            ratio = float(reshape) / max(shape)
+        else:
+            ratio = max(reshape) / max(shape)  # ratio  = new / old
+        new_unpad = (int(round(shape[1] * ratio)), int(round(shape[0] * ratio)))
+
+        padding_w = (reshape - new_unpad[0]) / 2  # width padding
+        padding_h = (reshape - new_unpad[1]) / 2  # height padding
+
+        top, bottom = int(round(padding_h - 0.1)), int(round(padding_h + 0.1))
+        left, right = int(round(padding_w - 0.1)), int(round(padding_w + 0.1))
+        img = cv2.resize(img, new_unpad)  # resized, no border, interpolation=cv2.INTER_AREA
+        img = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=0)  # padded square
+        t_labels = deepcopy(labels)
+        labels[:, 2] = ratio * w * (t_labels[:, 2] - t_labels[:, 4] / 2) + padding_w
+        labels[:, 3] = ratio * h * (t_labels[:, 3] - t_labels[:, 5] / 2) + padding_h
+        labels[:, 4] = ratio * w * (t_labels[:, 2] + t_labels[:, 4] / 2) + padding_w
+        labels[:, 5] = ratio * h * (t_labels[:, 3] + t_labels[:, 5] / 2) + padding_h
+
+        labels[:, 2:] = self.convertXYXY2XYWH(labels[:, 2:])
+        labels[:, [3, 5]] /= img.shape[0]  # height
+        labels[:, [2, 4]] /= img.shape[1]  # width
+        return img, labels
 
     @staticmethod
     def collate_fn(batch):
@@ -174,36 +213,30 @@ class yoloDataset(Dataset):
         img = cv2.imread(fname)
         label_boxes = self.get_boxes_labels(fname)
         # print(label_boxes.shape)
+        img, label_boxes = self.padding_img_and_labels(img, label_boxes, reshape=self.input_size)
+
         if self.train:
             # TODO
             # add data augument
             # print('before: ')
             # print(boxes)
-            boxes = self.convert2augbbox(cv2.resize(img, (self.resize, self.resize)), self.convertXYWH2XYXY(label_boxes[..., 2:]))
+            boxes = self.convert2augbbox(cv2.resize(img, (self.input_size, self.input_size)), self.convertXYWH2XYXY(label_boxes[..., 2:]))
             seq_det = self.augmentation.to_deterministic()
             aug_img = seq_det.augment_images([img])[0]
             boxes = seq_det.augment_bounding_boxes([boxes])[0].remove_out_of_image().clip_out_of_image()
-            
-            # img = boxes.draw_on_image(cv2.resize(img, (self.resize, self.resize)), thickness=2, color=[0, 0, 255])
-            
+                        
             boxes = self.convertAugbbox2XYWH(boxes)
             boxes = torch.Tensor(boxes)
-            if label_boxes.shape[0] == boxes.shape[0]:
+            if label_boxes.shape[0] != boxes.shape[0]:
                 label_boxes[..., 2:] = boxes[:]
                 img = aug_img
             else:
                 # print('bbox shfit failed use origin label')
                 pass
 
+        # img = self.transform(img)
         img = self.transform(img)
-        # print(fname)
-        # print(type(img))
-        # if self.with_file_path:
-        #     print(fname)
-        # print(label_boxes.shape)
-        # print(img.shape, label_boxes.shape)
         return img, label_boxes
-        # return img.to(self.device), target.to(self.device)
 
     def __len__(self):
         return self.num_samples
