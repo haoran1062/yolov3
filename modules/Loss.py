@@ -68,7 +68,8 @@ def compute_loss(yolo_layer, pred_tensor, target, cuda=True, vis=None, logger=No
     # print('target device: ', target.device, ' pred device: ', pred_tensor.device)
     # now_device = txy.device
     # pred_tensor = pred_tensor.to(now_device)
-    pconf = torch.sigmoid(pred_tensor[..., 0])
+    # pconf = torch.sigmoid(pred_tensor[..., 0])
+    pconf = pred_tensor[..., 0]
     tconf = torch.zeros_like(pconf)
     
     if len(img_id):
@@ -81,7 +82,8 @@ def compute_loss(yolo_layer, pred_tensor, target, cuda=True, vis=None, logger=No
         wh_loss += wh_lbd * mse_loss(pwh, twh)
         cls_loss += cls_lbd * ce_loss(obj_pred[..., 5:], tcls)
     
-    conf_loss += conf_lbd * bce_loss(pconf, tconf)
+    # conf_loss += conf_lbd * bce_loss(pconf, tconf)
+    conf_loss += conf_lbd * bce_log_loss(pconf, tconf)
     all_loss = conf_loss + xy_loss + wh_loss + cls_loss
 
     vis.plot('stride %d detect layer : confidence loss'%(yolo_layer.stride), conf_loss.item())

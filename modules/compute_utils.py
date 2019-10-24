@@ -3,7 +3,6 @@ import os, numpy as np, random, cv2, logging, json
 import torch
 
 from torchvision import models, transforms
-from torchvision.ops import nms
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -40,7 +39,7 @@ def bbox_un_norm(bboxes, im_size=(416, 416)):
 
 def clip_bbox(bbox, img_size=416):
     for i in range(len(bbox)):
-        bbox[i] = min(bbox[i], 416)
+        bbox[i] = min(bbox[i], img_size)
         bbox[i] = max(bbox[i], 0)
     return bbox
 
@@ -65,7 +64,7 @@ def make_color_list(n=20):
 
     pass
 
-def draw_debug_rect(img, bboxes, clss, confs, name_list, show_time=10000):
+def draw_debug_rect(img, bboxes, clss, confs, name_list, show_time=10000, img_size=416):
 
     if isinstance(img, torch.Tensor):
         img = img.mul(255).byte()
@@ -78,11 +77,11 @@ def draw_debug_rect(img, bboxes, clss, confs, name_list, show_time=10000):
         confs = confs.tolist()
 
     if bboxes[0][2] < 1:
-        bboxes = bbox_un_norm(bboxes)
+        bboxes = bbox_un_norm(bboxes, (img_size, img_size))
         print('un_norm bbox')
     # print(len(bboxes))
     for i, box in enumerate(bboxes):
-        box = clip_bbox(box)
+        box = clip_bbox(box, img_size)
 
         # box = drop_bbox(box)
         if box is None:
@@ -135,10 +134,10 @@ def bbox_iou(box1, box2, x1y1x2y2=True):
 
 def xywh2xyxy(x):
     y = x.new(x.shape)
-    y[..., 0] = x[..., 0] - x[..., 2] / 2
-    y[..., 1] = x[..., 1] - x[..., 3] / 2
-    y[..., 2] = x[..., 0] + x[..., 2] / 2
-    y[..., 3] = x[..., 1] + x[..., 3] / 2
+    y[..., 0] = x[..., 0] - x[..., 2] / 2.0
+    y[..., 1] = x[..., 1] - x[..., 3] / 2.0
+    y[..., 2] = x[..., 0] + x[..., 2] / 2.0
+    y[..., 3] = x[..., 1] + x[..., 3] / 2.0
     return y
 
 def non_max_suppression(prediction, conf_thres=0.5, nms_thres=0.4):
@@ -149,7 +148,7 @@ def non_max_suppression(prediction, conf_thres=0.5, nms_thres=0.4):
         (x1, y1, x2, y2, object_conf, class_score, class_pred)
     """
 
-    # From (center x, center y, width, height) to (x1, y1, x2, y2)
+    # From (center x, center y, width, height) to (x1, y1, x2, y2).float()
     # print(prediction[0])
     prediction[..., 1:5] = xywh2xyxy(prediction[..., 1:5])
     output = [None for _ in range(len(prediction))]

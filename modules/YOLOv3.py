@@ -16,7 +16,7 @@ ce_loss = nn.CrossEntropyLoss()
 bce_log_loss = nn.BCEWithLogitsLoss()
 
 class YOLOLayer(nn.Module):
-    def __init__(self, cfg, lbd_cfg, logger=None, vis=None, img_size=416):
+    def __init__(self, cfg, lbd_cfg, logger=None, vis=None, img_size=608):
         super(YOLOLayer, self).__init__()
         self.obj_lbd = cfg['obj_lbd']
         self.noobj_lbd = cfg['noobj_lbd']

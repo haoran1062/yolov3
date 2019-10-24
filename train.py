@@ -24,13 +24,28 @@ from modules.compute_utils import *
 import torch.optim as optim
 import torch.distributed as dist
 from modules.Loss import *
+try:
+    from apex.parallel import DistributedDataParallel as DDP
+    from apex.fp16_utils import *
+    from apex import amp, optimizers
+    from apex.multi_tensor_apply import multi_tensor_applier
+    fp16_using = True
+    print("\nCUDNN VERSION: {}\n".format(torch.backends.cudnn.version()))
+
+except ImportError:
+    raise ImportError("Please install apex from https://www.github.com/nvidia/apex to run this example.")
+    fp16_using = False
 # torch.backends.cudnn.benchmark=False
 os.environ['MASTER_ADDR'] = '127.0.0.1'
 os.environ['MASTER_PORT'] = '9999'
+# torch.distributed.init_process_group()
+dist.init_process_group(backend='nccl', init_method='tcp://127.0.0.1:9999', world_size=1, rank=0)
 # torch.distributed.init_process_group(backend='nccl', init_method='tcp://127.0.0.1:9999', world_size=2, rank=0)
 # torch.distributed.deprecated.init_process_group(backend='nccl', rank=0, world_size=1, init_method='tcp://127.0.0.1:9999')
 # torch.distributed.deprecated.init_process_group(backend='nccl')
-# dist.init_process_group(backend='nccl', init_method='tcp://127.0.0.1:9999', world_size=1, rank=0)
+
+
+
 
 parser = argparse.ArgumentParser(
     description='YOLO V1 Training params')
@@ -48,45 +63,43 @@ logger = create_logger(train_config['base_save_path'], train_config['log_name'])
 
 my_vis = Visual(train_config['base_save_path'], log_to_file=train_config['vis_log_path'])
 
-# yolo = init_model(config_map)
-yolo = YOLO(config_map, logger=logger, vis=my_vis)
-# yolo_p = nn.parallel.DistributedDataParallel(yolo.to(device), device_ids=train_config['gpu_ids'])
-yolo_p = nn.parallel.DataParallel(yolo.to(device), device_ids=train_config['gpu_ids'])
-if train_config['resume_from_path']:
-    yolo_p.load_state_dict(torch.load(train_config['resume_from_path']))
 
-# print(yolo_p)
-# summary(yolo_p, (3, 416, 416), batch_size=train_config['batch_size'])
-# exit()
 lr0 = train_config['lbd_map']['lr0']
 lrf = train_config['lbd_map']['lrf']
 momentum = train_config['lbd_map']['momentum']
 weight_decay = train_config['lbd_map']['weight_decay']
 resume_epoch = train_config['resume_epoch']
 epochs = train_config['epoch_num']
-
-
 learning_rate = 0.
+# yolo = init_model(config_map)
+yolo = YOLO(config_map, logger=logger, vis=my_vis).to(device)
+optimizer = optim.SGD(yolo.parameters(), lr=learning_rate, momentum=momentum, weight_decay=weight_decay)
+
+
+# yolo_p = nn.parallel.DistributedDataParallel(yolo.to(device), device_ids=train_config['gpu_ids'])
+if config_map.fp16_training:
+    yolo, optimizer = amp.initialize(yolo, optimizer, opt_level='O1', loss_scale=128.0)
+    yolo_p = DDP(yolo)
+else:
+    yolo_p = nn.parallel.DistributedDataParallel(yolo, device_ids=train_config['gpu_ids'])
+if train_config['resume_from_path']:
+    yolo_p.load_state_dict(torch.load(train_config['resume_from_path']))
+
+
+
 # optimizer = optim.SGD(yolo_p.parameters(), lr=lr0, momentum=momentum, weight_decay=weight_decay) # , weight_decay=5e-4)
-optimizer = optim.SGD(yolo_p.parameters(), lr=learning_rate, momentum=momentum, weight_decay=weight_decay)
 # optimizer = optim.Adam(yolo_p.parameters())
 
 # yolo_p.load_state_dict(torch.load('densenet_sgd_S7_yolo.pth'))
 
 yolo_p.module.train()
 print(yolo_p)
-# exit()
-# transform = transforms.Compose([
-#         transforms.Lambda(cv_resize),
-#         transforms.ToTensor(),
-#         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
-#     ])
 
 
-train_dataset = yoloDataset(list_file=train_config['train_txt_path'], train=False, little_train=False, test_mode=False)
+train_dataset = yoloDataset(list_file=train_config['train_txt_path'], train=False, little_train=False, input_size=config_map.input_size, test_mode=False)
 train_loader = DataLoader(train_dataset, batch_size=train_config['batch_size'], shuffle=True, num_workers=train_config['worker_num'], collate_fn=train_dataset.collate_fn)
 
-test_dataset = yoloDataset(list_file=train_config['test_txt_path'], train=False, test_mode=False)
+test_dataset = yoloDataset(list_file=train_config['test_txt_path'], train=False, input_size=config_map.input_size, test_mode=False)
 test_loader = DataLoader(test_dataset, batch_size=1, shuffle=True, num_workers=train_config['worker_num'], collate_fn=train_dataset.collate_fn)
 test_iter = iter(test_loader)
 
@@ -155,9 +168,14 @@ for epoch in range(train_config['resume_epoch'], train_config['epoch_num']):
         total_loss += now_loss.data.item()
         # print(p_mask.shape, mask_label.shape)
         # exit()
-
         optimizer.zero_grad()
-        now_loss.backward()
+
+        if config_map.fp16_training:
+            with amp.scale_loss(now_loss, optimizer) as bp_loss:
+                bp_loss.backward()
+        else:
+            now_loss.backward()
+        
         optimizer.step()
         it_ed_time = time.clock()
         it_cost_time = it_ed_time - it_st_time
@@ -168,14 +186,14 @@ for epoch in range(train_config['resume_epoch'], train_config['epoch_num']):
         
         if my_vis and i % train_config['show_img_iter_during_train'] == 0:
             yolo_p.module.eval()
-            # img, label_bboxes = next(test_iter)
+            # img, label_bboxes = next(test_iter).to('cpu')
             pred = yolo_p(img[0].unsqueeze(0))
-            detect_tensor = non_max_suppression(pred.to('cpu'), conf_thres=0.5, nms_thres=0.25)
+            detect_tensor = non_max_suppression(pred, conf_thres=0.5, nms_thres=0.25)
             detect_tensor = detect_tensor[0]
             show_img = unorm(img[0])
             if detect_tensor is not None:
                 # print(show_img.shape)
-                show_img = draw_debug_rect(show_img.permute(1, 2 ,0), detect_tensor[..., 1:5], detect_tensor[..., -1], detect_tensor[..., -2], name_list)
+                show_img = draw_debug_rect(show_img.permute(1, 2 ,0), detect_tensor[..., 1:5], detect_tensor[..., -1], detect_tensor[..., -2], name_list, img_size=config_map.input_size)
             my_vis.img('detect bboxes show', show_img)
 
             yolo_p.module.train()

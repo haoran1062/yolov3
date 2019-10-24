@@ -5,8 +5,9 @@ class Config(object):
         super(Config, self).__init__()
         self.class_num = 20
         self.backbone_type='resnet18'
-        self.multi_scale = True
-        self.input_size = 416
+        self.multi_scale = False
+        self.fp16_training = True
+        self.input_size = 608
         self.backbone_config = dict(
             layer_st=2,
             layer_ed=5,
@@ -81,17 +82,19 @@ class Config(object):
 
             gpu_ids= [0],
             worker_num=4,
-            batch_size=8,
-            epoch_num=15000,
+            batch_size=12,
+            epoch_num=1500,
             show_img_iter_during_train=10,
             resume_from_path=None,
             resume_epoch=0,
             # train_txt_path="/data/datasets/yolo_txt/top300_truth_till_20190624.txt",
             # train_txt_path="/data/datasets/yolo_txt/top300_truth_till_20190624+till_20190628.txt",
-            train_txt_path="datasets/2007_train.txt",
+            # train_txt_path="datasets/2007_train.txt",
+            train_txt_path="/data/projects/table_project/data/train.txt",
             # train_txt_path="datasets/little_train.txt",
             # train_txt_path="datasets/train.txt",
-            test_txt_path="datasets/2007_train.txt",
+            test_txt_path="/data/projects/table_project/data/train.txt",
+            # test_txt_path="datasets/2007_train.txt",
             log_name="trainLog",
             base_save_path="/data/temp/resnet18_results",
             vis_log_path="/data/temp/resnet18_results/vis_log.log",
